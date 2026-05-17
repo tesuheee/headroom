@@ -8,6 +8,7 @@ $Csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $WinForms = Join-Path $Pkg "lib\net462\Microsoft.Web.WebView2.WinForms.dll"
 $Core = Join-Path $Pkg "lib\net462\Microsoft.Web.WebView2.Core.dll"
 $Loader = Join-Path $Pkg "runtimes\win-x64\native\WebView2Loader.dll"
+$Icon = Join-Path $PSScriptRoot "app.ico"
 
 if (-not (Test-Path $WinForms) -or -not (Test-Path $Core) -or -not (Test-Path $Loader)) {
   New-Item -ItemType Directory -Force -Path $PackageRoot | Out-Null
@@ -25,11 +26,11 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Copy-Item $WinForms $Out -Force
 Copy-Item $Core $Out -Force
 Copy-Item $Loader $Out -Force
+Copy-Item $Icon $Out -Force
 
 $Exe = Join-Path $Out "AiUsageWebView2.exe"
 $Source = Join-Path $PSScriptRoot "Program.cs"
-$Icon = Join-Path $PSScriptRoot "app.ico"
-$Args = @(
+$CscArgs = @(
   "/nologo",
   "/target:winexe",
   "/platform:x64",
@@ -44,6 +45,6 @@ $Args = @(
   $Source
 )
 
-& $Csc @Args
+& $Csc @CscArgs
 
 "Built: $Exe"

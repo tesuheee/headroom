@@ -39,6 +39,7 @@ namespace AiUsageWebView2
         readonly WebView2 codexView = new WebView2();
         readonly Dictionary<string, Rectangle> hits = new Dictionary<string, Rectangle>();
         readonly WidgetSettings settings = WidgetSettings.Load();
+        readonly ToolTip toolTip = new ToolTip { InitialDelay = 400, ReshowDelay = 200 };
 
         CoreWebView2Environment webEnv;
         ServiceState claude = new ServiceState("Claude", ClaudeUrl, Color.FromArgb(45, 132, 235));
@@ -65,6 +66,14 @@ namespace AiUsageWebView2
             TopMost = settings.AlwaysOnTop;
             DoubleBuffered = true;
             KeyPreview = true;
+            ShowInTaskbar = true;
+            try
+            {
+                string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+                if (File.Exists(icoPath))
+                    Icon = new Icon(icoPath);
+            }
+            catch { }
 
             foreach (var view in new[] { claudeView, codexView })
             {
@@ -190,13 +199,25 @@ namespace AiUsageWebView2
                 Text = service.Name + " Login",
                 Width = 980,
                 Height = 760,
-                StartPosition = FormStartPosition.CenterScreen
+                StartPosition = FormStartPosition.CenterScreen,
+                TopMost = false
             };
             var view = new WebView2 { Dock = DockStyle.Fill };
             login.Controls.Add(view);
             login.Shown += async (s, e) =>
             {
                 await view.EnsureCoreWebView2Async(webEnv);
+                view.CoreWebView2.NavigationCompleted += (s2, e2) =>
+                {
+                    var uri = view.CoreWebView2.Source;
+                    if (uri != null && (uri.Contains("/settings/usage") || uri.Contains("/settings/analytics")))
+                    {
+                        login.BeginInvoke(new Action(() =>
+                        {
+                            if (!login.IsDisposed) login.Close();
+                        }));
+                    }
+                };
                 view.CoreWebView2.Navigate(service.Url);
             };
             login.FormClosed += async (s, e) =>
@@ -290,6 +311,7 @@ namespace AiUsageWebView2
                 data.WeeklyUsed = FindUsedPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
             }
+            data.HitLimit = DetectLimitHit(text);
             if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
         }
@@ -326,8 +348,17 @@ namespace AiUsageWebView2
                 data.WeeklyRemaining = FindRemainingPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
             }
+            data.HitLimit = DetectLimitHit(text);
             if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
+        }
+
+        static bool DetectLimitHit(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return Regex.IsMatch(text,
+                @"上限に達しました|上限に近づいています|制限に達しました|You'?ve reached.{0,20}limit|limit reached|approaching.{0,20}limit|at capacity",
+                RegexOptions.IgnoreCase);
         }
 
         static List<string> SplitLines(string text)
@@ -434,6 +465,21 @@ namespace AiUsageWebView2
                 await OpenLoginAsync(service);
         }
 
+        string TooltipText(string key)
+        {
+            if (key == "close") return T("閉じる", "Close");
+            if (key == "pin") return T(settings.AlwaysOnTop ? "最前面を解除" : "最前面に固定", settings.AlwaysOnTop ? "Unpin from top" : "Always on top");
+            if (key == "settings") return T("設定", "Settings");
+            if (key.EndsWith("-refresh")) return T("更新", "Refresh");
+            if (key.EndsWith("-boost"))
+            {
+                ServiceState svc = key.StartsWith("codex") ? codex : claude;
+                return svc.BoostActive ? T("ブースト解除", "Stop boost") : T("ブースト（高頻度更新）", "Boost (frequent refresh)");
+            }
+            if (key.EndsWith("-login")) return T("ログイン", "Login");
+            return "";
+        }
+
         void ToggleBoost(ServiceState service)
         {
             if (service.BoostUntil.HasValue && service.BoostUntil.Value > DateTime.Now)
@@ -458,6 +504,11 @@ namespace AiUsageWebView2
             if (hoverKey != key)
             {
                 hoverKey = key;
+                string tip = TooltipText(key);
+                if (tip.Length > 0)
+                    toolTip.Show(tip, this, e.X + 12, e.Y + 18);
+                else
+                    toolTip.Hide(this);
                 Invalidate();
             }
         }
@@ -531,7 +582,7 @@ namespace AiUsageWebView2
             bool showUsed = state.Name == "Codex" ? settings.CodexShowUsed : settings.ClaudeShowUsed;
             int? fiveRemain = state.Data.FiveHourRemainingPercent();
             int? weekRemain = state.Data.WeeklyRemainingPercent();
-            bool exhausted = (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
+            bool exhausted = state.Data.HitLimit || (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
             bool stale = state.LastRefresh != DateTime.MinValue &&
                 DateTime.Now - state.LastRefresh > TimeSpan.FromMinutes(Math.Max(2, settings.NormalIntervalMinutes * 2));
             Color accent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
@@ -606,15 +657,13 @@ namespace AiUsageWebView2
         {
             int refreshX = x + w - 34;
             int controlY = y + 12;
-            int toggleW = 32;
-            int toggleH = 17;
-            int toggleX = refreshX - toggleW - 12;
+            int boostX = refreshX - 28;
             var boostText = BoostText(state);
             int boostTextW = boostText.Length > 0 ? 52 : 0;
-            int boostTextX = toggleX - boostTextW - 6;
+            int boostTextX = boostX - boostTextW - 4;
 
             hits[keyPrefix + "-refresh"] = new Rectangle(refreshX - 4, controlY - 3, 30, 28);
-            hits[keyPrefix + "-boost"] = new Rectangle(toggleX - 3, controlY + 1, toggleW + 6, toggleH + 6);
+            hits[keyPrefix + "-boost"] = new Rectangle(boostX - 4, controlY - 3, 28, 28);
 
             using (var small = new Font("Segoe UI", 8.5f, FontStyle.Regular))
             using (var textBrush = new SolidBrush(Color.FromArgb(140, 150, 165)))
@@ -623,7 +672,7 @@ namespace AiUsageWebView2
                     g.DrawString(boostText, small, textBrush, boostTextX, controlY + 3);
             }
 
-            DrawToggle(g, toggleX, controlY + 3, toggleW, toggleH, state.BoostActive, hoverKey == keyPrefix + "-boost");
+            DrawBoostIcon(g, boostX, controlY, state.BoostActive, hoverKey == keyPrefix + "-boost");
             DrawRefreshIcon(g, refreshX, controlY, keyPrefix + "-refresh", state.IsRefreshing);
         }
 
@@ -695,19 +744,19 @@ namespace AiUsageWebView2
             Color numColor = limit ? Color.FromArgb(255, 130, 130) : (warning ? Color.FromArgb(245, 200, 100) : Color.FromArgb(240, 242, 248));
             using (var pctBrush = new SolidBrush(numColor))
             {
-            int labelX = x + 18;
-            int modeX = labelX + Math.Max(36, (int)Math.Ceiling(g.MeasureString("5時間", labelFont).Width)) + 8;
+            int labelX = x + 10;
+            int modeX = labelX + Math.Max(32, (int)Math.Ceiling(g.MeasureString("5時間", labelFont).Width)) + 4;
             string modeText = showUsed ? T("使用", "Used") : T("残り", "Left");
-            int percentX = modeX + Math.Max(32, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 8;
+            int percentX = modeX + Math.Max(28, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 4;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
             g.DrawString(empty ? "--" : pct.Value + "%", numFont, pctBrush, percentX, y - 4);
 
             int pctWidth = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
-            int barX = percentX + pctWidth + 10;
+            int barX = percentX + pctWidth + 6;
             int barY = y + Math.Max(5, (int)Math.Round(settings.PercentFontSize * 0.42));
-            int barW = Math.Max(70, w - (barX - x) - 18);
+            int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, pct, rowColor);
 
             string reset = ResetText(resetText, weekly, English);
@@ -905,35 +954,36 @@ namespace AiUsageWebView2
                 g.DrawString(s, f, b, x + (active ? 2 : 1), y + (active ? 0 : -1));
         }
 
-        void DrawToggle(Graphics g, int x, int y, int w, int h, bool on, bool hover)
+        void DrawBoostIcon(Graphics g, int x, int y, bool on, bool hover)
         {
-            using (var p = RoundRect(x, y, w, h, h / 2))
+            var r = new Rectangle(x - 2, y - 2, 24, 24);
+            if (hover)
             {
-                if (on)
-                {
-                    Color left = Color.FromArgb(40, 120, 220);
-                    Color right = Color.FromArgb(60, 150, 255);
-                    using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(x, y, w, h), left, right, 0f))
-                        g.FillPath(grad, p);
-                }
-                else
-                {
-                    Color bg = hover ? Color.FromArgb(72, 72, 76) : Color.FromArgb(52, 52, 56);
-                    using (var b = new SolidBrush(bg))
-                        g.FillPath(b, p);
-                }
-                using (var border = new Pen(Color.FromArgb(on ? 40 : 25, 255, 255, 255), 0.5f))
-                    g.DrawPath(border, p);
+                using (var bg = new SolidBrush(Color.FromArgb(48, 48, 54)))
+                using (var path = RoundRect(r.X - 1, r.Y - 1, r.Width + 2, r.Height + 2, 12))
+                    g.FillPath(bg, path);
             }
-            int knob = h - 5;
-            int knobX = on ? x + w - knob - 3 : x + 3;
-            using (var knobPath = RoundRect(knobX, y + 2, knob, knob, knob / 2))
+            if (on)
             {
-                using (var shadow = new SolidBrush(Color.FromArgb(30, 0, 0, 0)))
-                    g.FillEllipse(shadow, knobX + 1, y + 3, knob, knob);
-                using (var b = new SolidBrush(Color.FromArgb(245, 248, 252)))
-                    g.FillPath(b, knobPath);
+                using (var glow = new SolidBrush(Color.FromArgb(30, 255, 210, 50)))
+                    g.FillEllipse(glow, x - 1, y - 1, 22, 22);
             }
+            int cx = x + 9;
+            int cy = y + 10;
+            var bolt = new Point[]
+            {
+                new Point(cx + 1, cy - 8),
+                new Point(cx - 3, cy + 1),
+                new Point(cx + 1, cy + 1),
+                new Point(cx - 1, cy + 8),
+                new Point(cx + 3, cy - 1),
+                new Point(cx - 1, cy - 1),
+            };
+            Color boltColor = on ? Color.FromArgb(255, 220, 60) : (hover ? Color.FromArgb(210, 215, 220) : Color.FromArgb(160, 165, 172));
+            using (var brush = new SolidBrush(boltColor))
+                g.FillPolygon(brush, bolt);
+            using (var pen = new Pen(on ? Color.FromArgb(200, 170, 30) : Color.FromArgb(100, 105, 112), 0.6f))
+                g.DrawPolygon(pen, bolt);
         }
 
         void DrawCloseIcon(Graphics g, Rectangle r, Color color)
@@ -1323,6 +1373,7 @@ namespace AiUsageWebView2
         public int? WeeklyRemaining;
         public string FiveHourReset;
         public string WeeklyReset;
+        public bool HitLimit;
 
         public bool HasAnyValue()
         {
