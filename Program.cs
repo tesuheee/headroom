@@ -39,7 +39,7 @@ namespace AiUsageWebView2
         readonly WebView2 codexView = new WebView2();
         readonly Dictionary<string, Rectangle> hits = new Dictionary<string, Rectangle>();
         readonly WidgetSettings settings = WidgetSettings.Load();
-        readonly ToolTip toolTip = new ToolTip { InitialDelay = 400, ReshowDelay = 200 };
+        readonly ToolTip toolTip = new ToolTip { InitialDelay = 300, ReshowDelay = 100, ShowAlways = true };
 
         CoreWebView2Environment webEnv;
         ServiceState claude = new ServiceState("Claude", ClaudeUrl, Color.FromArgb(45, 132, 235));
@@ -96,6 +96,7 @@ namespace AiUsageWebView2
             KeyDown += async (s, e) =>
             {
                 if (e.KeyCode == Keys.F5) await RefreshAllAsync(true);
+                if (e.KeyCode == Keys.S || e.KeyCode == Keys.F2) ShowSettingsDialog();
             };
 
             paintTimer.Interval = 250;
@@ -504,11 +505,16 @@ namespace AiUsageWebView2
             if (hoverKey != key)
             {
                 hoverKey = key;
+                toolTip.Hide(this);
                 string tip = TooltipText(key);
                 if (tip.Length > 0)
-                    toolTip.Show(tip, this, e.X + 12, e.Y + 18);
-                else
-                    toolTip.Hide(this);
+                {
+                    Rectangle hr;
+                    if (hits.TryGetValue(key, out hr))
+                        toolTip.Show(tip, this, hr.X + hr.Width / 2, hr.Y + hr.Height + 4, 3000);
+                    else
+                        toolTip.Show(tip, this, e.X + 12, e.Y + 18, 3000);
+                }
                 Invalidate();
             }
         }
@@ -641,13 +647,14 @@ namespace AiUsageWebView2
                 }
 
                 int contentTop = y + Math.Max(44, (int)Math.Ceiling(settings.PercentFontSize + 24));
-                int contentBottom = y + h - 14;
+                int contentBottom = y + h - 10;
                 int rowHeight = Math.Max(32, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 14)));
-                int usable = Math.Max(rowHeight * 2, contentBottom - contentTop);
-                int free = usable - rowHeight * 2;
-                int gapY = Math.Max(6, free / 3);
-                int firstY = contentTop + gapY;
-                int secondY = firstY + rowHeight + gapY;
+                int totalRows = rowHeight * 2;
+                int free = Math.Max(0, contentBottom - contentTop - totalRows);
+                int topPad = free / 2;
+                int rowGap = Math.Max(2, Math.Min(10, free / 4));
+                int firstY = contentTop + topPad;
+                int secondY = firstY + rowHeight + rowGap;
                 DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
                 DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
@@ -1172,7 +1179,10 @@ namespace AiUsageWebView2
             topMost.Text = T("常に最前面に固定", "Always on top");
             topMost.Checked = settings.AlwaysOnTop;
             topMost.Location = new Point(colL + 4, startY + 22 + row * 5 + 32 + row);
-            topMost.Width = 200;
+            topMost.Width = 220;
+            topMost.FlatStyle = FlatStyle.Flat;
+            topMost.ForeColor = Color.FromArgb(200, 205, 215);
+            topMost.Font = new Font("Segoe UI", 9.2f);
             Controls.Add(topMost);
 
             // Right column: Display
@@ -1189,8 +1199,12 @@ namespace AiUsageWebView2
 
             // Bottom buttons
             int btnY = Height - 72;
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 192, btnY), Width = 76, Height = 28 };
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 104, btnY), Width = 76, Height = 28 };
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 192, btnY), Width = 76, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 95, 180), ForeColor = Color.White, Font = new Font("Segoe UI", 9.2f, FontStyle.Bold) };
+            ok.FlatAppearance.BorderColor = Color.FromArgb(60, 120, 210);
+            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(55, 110, 200);
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 104, btnY), Width = 76, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(48, 48, 54), ForeColor = Color.FromArgb(200, 205, 215), Font = new Font("Segoe UI", 9.2f) };
+            cancel.FlatAppearance.BorderColor = Color.FromArgb(65, 65, 72);
+            cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(60, 60, 68);
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
@@ -1211,6 +1225,18 @@ namespace AiUsageWebView2
             };
         }
 
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics;
+            using (var pen = new Pen(Color.FromArgb(40, 40, 48)))
+            {
+                int midX = 406;
+                g.DrawLine(pen, midX, 14, midX, Height - 80);
+                g.DrawLine(pen, 18, Height - 78, Width - 36, Height - 78);
+            }
+        }
+
         void AddSectionLabel(string text, int x, int y)
         {
             var label = new Label
@@ -1218,8 +1244,8 @@ namespace AiUsageWebView2
                 Text = text,
                 Location = new Point(x, y),
                 Width = 200,
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(140, 160, 200)
+                Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(120, 150, 210)
             };
             Controls.Add(label);
         }
@@ -1230,6 +1256,10 @@ namespace AiUsageWebView2
             colorBox.Text = colorValue;
             colorBox.Location = new Point(x + 290, y);
             colorBox.Width = 72;
+            colorBox.BackColor = Color.FromArgb(38, 38, 44);
+            colorBox.ForeColor = Color.FromArgb(230, 232, 238);
+            colorBox.BorderStyle = BorderStyle.FixedSingle;
+            colorBox.Font = new Font("Segoe UI", 9.2f);
             Controls.Add(colorBox);
         }
 
@@ -1240,38 +1270,52 @@ namespace AiUsageWebView2
 
         void AddNumber(string text, NumericUpDown box, int value, int x, int y, int min, int max)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(200, 205, 215), Font = new Font("Segoe UI", 9.2f) };
             box.Minimum = min;
             box.Maximum = max;
             box.Value = Math.Max(min, Math.Min(max, value));
             box.Location = new Point(x + 210, y);
             box.Width = 68;
+            box.BackColor = Color.FromArgb(38, 38, 44);
+            box.ForeColor = Color.FromArgb(230, 232, 238);
+            box.BorderStyle = BorderStyle.FixedSingle;
+            box.Font = new Font("Segoe UI", 9.2f);
             Controls.Add(label);
             Controls.Add(box);
         }
 
+        void StyleComboBox(ComboBox box)
+        {
+            box.BackColor = Color.FromArgb(38, 38, 44);
+            box.ForeColor = Color.FromArgb(230, 232, 238);
+            box.FlatStyle = FlatStyle.Flat;
+            box.Font = new Font("Segoe UI", 9.2f);
+        }
+
         void AddMode(string text, ComboBox box, bool showUsed, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(200, 205, 215), Font = new Font("Segoe UI", 9.2f) };
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.Items.Add(T("残量表示", "Remaining"));
             box.Items.Add(T("使用量表示", "Used"));
             box.SelectedIndex = showUsed ? 1 : 0;
             box.Location = new Point(x + 210, y);
             box.Width = 110;
+            StyleComboBox(box);
             Controls.Add(label);
             Controls.Add(box);
         }
 
         void AddLanguage(string text, ComboBox box, string value, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(200, 205, 215), Font = new Font("Segoe UI", 9.2f) };
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.Items.Add("日本語");
             box.Items.Add("English");
             box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             box.Location = new Point(x + 210, y);
             box.Width = 110;
+            StyleComboBox(box);
             Controls.Add(label);
             Controls.Add(box);
         }
