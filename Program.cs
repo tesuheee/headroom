@@ -59,7 +59,7 @@ namespace AiUsageWebView2
             Text = "AI Usage";
             Width = settings.Width;
             Height = settings.Height;
-            MinimumSize = new Size(560, 136);
+            MinimumSize = new Size(640, 136);
             FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.Black;
             TransparencyKey = Color.Black;
@@ -1470,7 +1470,7 @@ namespace AiUsageWebView2
 
     sealed class WidgetSettings
     {
-        public int Width = 680;
+        public int Width = 760;
         public int Height = 170;
         public string Language = "ja";
         public int NormalIntervalMinutes = 5;
