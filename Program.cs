@@ -579,8 +579,8 @@ namespace AiUsageWebView2
                 int gapY = Math.Max(4, free / 3);
                 int firstY = contentTop + gapY;
                 int secondY = firstY + rowHeight + gapY;
-                DrawRow(g, "5時間", state.Data.FiveHourDisplayPercent(showUsed), showUsed, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
-                DrawRow(g, "週", state.Data.WeeklyDisplayPercent(showUsed), showUsed, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, "5時間", state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, "週", state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
         }
 
@@ -649,7 +649,7 @@ namespace AiUsageWebView2
             return "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, bool showUsed, string resetText, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
+        void DrawRow(Graphics g, string label, int? pct, bool showUsed, bool weekly, string resetText, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
@@ -670,7 +670,7 @@ namespace AiUsageWebView2
             int barW = Math.Max(70, w - (barX - x) - 17);
             DrawBar(g, barX, barY, barW, 7, pct, rowColor);
 
-            string reset = ResetText(resetText);
+            string reset = ResetText(resetText, weekly);
             if (!string.IsNullOrEmpty(reset))
                 g.DrawString(reset, resetFont, dim, barX, y + Math.Max(16, (int)Math.Round(settings.PercentFontSize * 0.95)));
             }
@@ -689,11 +689,16 @@ namespace AiUsageWebView2
 
         static string ResetText(string raw)
         {
+            return ResetText(raw, false);
+        }
+
+        static string ResetText(string raw, bool preferAbsolute)
+        {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             var lower = raw.ToLowerInvariant();
             string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
             if (cleaned.Contains("リセットまで")) return cleaned;
-            var relative = RelativeResetText(cleaned);
+            var relative = RelativeResetText(cleaned, preferAbsolute);
             if (!string.IsNullOrEmpty(relative)) return relative;
 
             if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}"))
@@ -717,13 +722,15 @@ namespace AiUsageWebView2
             return "リセット " + cleaned;
         }
 
-        static string RelativeResetText(string text)
+        static string RelativeResetText(string text, bool preferAbsolute)
         {
             var m = Regex.Match(text, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
             if (!m.Success) return "";
             int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
             int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
-            return "リセットまで " + FormatDuration(new TimeSpan(hours, minutes, 0));
+            var span = new TimeSpan(hours, minutes, 0);
+            if (preferAbsolute) return "リセット " + FormatDateTime(DateTime.Now.Add(span));
+            return "リセットまで " + FormatDuration(span);
         }
 
         static bool TryParseResetTarget(string text, out DateTime target)
@@ -756,6 +763,11 @@ namespace AiUsageWebView2
             int minutes = totalMinutes % 60;
             if (hours > 0) return hours + "時間" + minutes + "分";
             return minutes + "分";
+        }
+
+        static string FormatDateTime(DateTime value)
+        {
+            return value.ToString("M/d H:mm");
         }
 
         void DrawLoginButton(Graphics g, int x, int y, string key)
