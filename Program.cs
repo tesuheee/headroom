@@ -1024,7 +1024,7 @@ namespace AiUsageWebView2
             using (var dotBrush = new SolidBrush(Color.FromArgb(70, 75, 82)))
             {
                 for (int row = 0; row < 3; row++)
-                    for (int col = row; col < 3; col++)
+                    for (int col = 2 - row; col < 3; col++)
                         g.FillEllipse(dotBrush, right - (2 - col) * 5 - 2, bottom - (2 - row) * 5 - 2, 3, 3);
             }
         }
