@@ -701,10 +701,11 @@ namespace AiUsageWebView2
             var relative = RelativeResetText(cleaned, preferAbsolute);
             if (!string.IsNullOrEmpty(relative)) return relative;
 
-            if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}"))
-                return "リセット " + cleaned;
-
             DateTime target;
+            if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}") &&
+                TryParseResetTarget(cleaned, out target))
+                return "リセット " + FormatDateTime(target);
+
             if (TryParseResetTarget(cleaned, out target))
                 return "リセットまで " + FormatDuration(target - DateTime.Now);
 
