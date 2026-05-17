@@ -48,6 +48,10 @@ namespace AiUsageWebView2
         Size resizeStartSize;
         string hoverKey = "";
         int spinnerFrame;
+        bool English
+        {
+            get { return string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase); }
+        }
 
         public UsageForm()
         {
@@ -155,7 +159,7 @@ namespace AiUsageWebView2
         {
             if (service.IsRefreshing) return;
             service.IsRefreshing = true;
-            service.Status = manual ? "更新中" : service.Status;
+            service.Status = manual ? "updating" : service.Status;
             Invalidate();
             try
             {
@@ -168,7 +172,7 @@ namespace AiUsageWebView2
             }
             catch (Exception ex)
             {
-                service.Status = "取得エラー";
+                service.Status = "fetch_error";
                 WriteDebug(service.Name.ToLowerInvariant() + "-error.txt", ex.ToString());
             }
             finally
@@ -259,13 +263,13 @@ namespace AiUsageWebView2
             var data = new UsageData { Name = "Claude", Source = "Claude Web", UpdatedAt = DateTime.Now };
             if (string.IsNullOrWhiteSpace(text))
             {
-                data.Status = "データなし";
+                data.Status = "no_data";
                 return data;
             }
             if (Regex.IsMatch(text, "ログイン|サインイン|Claude を試す|Claudeを体験する") &&
                 !Regex.IsMatch(text, "プラン使用制限|現在のセッション|週間制限"))
             {
-                data.Status = "ログインが必要";
+                data.Status = "login_required";
                 return data;
             }
 
@@ -286,7 +290,7 @@ namespace AiUsageWebView2
                 data.WeeklyUsed = FindUsedPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
             }
-            if (!data.HasAnyValue()) data.Status = "使用量テキストなし";
+            if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
         }
 
@@ -295,13 +299,13 @@ namespace AiUsageWebView2
             var data = new UsageData { Name = "Codex", Source = "Codex Web", UpdatedAt = DateTime.Now };
             if (string.IsNullOrWhiteSpace(text))
             {
-                data.Status = "データなし";
+                data.Status = "no_data";
                 return data;
             }
             if (Regex.IsMatch(text, "ログイン|サインイン|Log in|Sign in", RegexOptions.IgnoreCase) &&
                 !Regex.IsMatch(text, "残高|使用制限|Codex|usage|limit", RegexOptions.IgnoreCase))
             {
-                data.Status = "ログインが必要";
+                data.Status = "login_required";
                 return data;
             }
 
@@ -322,7 +326,7 @@ namespace AiUsageWebView2
                 data.WeeklyRemaining = FindRemainingPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
             }
-            if (!data.HasAnyValue()) data.Status = "使用量テキストなし";
+            if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
         }
 
@@ -549,11 +553,11 @@ namespace AiUsageWebView2
             {
                 g.DrawString(state.Name, title, white, x + 18, y + 11);
                 if (stale)
-                    DrawBadge(g, "古い", x + 93, y + 16, Color.FromArgb(130, 92, 25));
+                    DrawBadge(g, T("古い", "Stale"), x + 93, y + 16, Color.FromArgb(130, 92, 25));
                 if (exhausted)
                 {
-                    DrawBadge(g, "上限", x + 93, y + 16, Color.FromArgb(116, 42, 42));
-                    string limitReset = LimitResetText(state.Data, fiveRemain, weekRemain);
+                    DrawBadge(g, T("上限", "Limit"), x + 93, y + 16, Color.FromArgb(116, 42, 42));
+                    string limitReset = LimitResetText(state.Data, fiveRemain, weekRemain, English);
                     if (limitReset.Length > 0)
                     {
                         using (var badgeText = new Font("Yu Gothic UI", 8.8f, FontStyle.Regular))
@@ -565,7 +569,7 @@ namespace AiUsageWebView2
                 if (!state.Data.HasAnyValue())
                 {
                     g.DrawString("--", num, white, x + 58, y + 54);
-                    string status = state.IsRefreshing ? "更新中" : (state.Status ?? state.Data.Status ?? "データなし");
+                    string status = state.IsRefreshing ? T("更新中", "Updating") : StatusText(state.Status ?? state.Data.Status ?? "no_data");
                     g.DrawString(status, label, muted, x + 20, y + 88);
                     DrawLoginButton(g, x + w - 96, y + h - 38, keyPrefix + "-login");
                     return;
@@ -579,8 +583,8 @@ namespace AiUsageWebView2
                 int gapY = Math.Max(4, free / 3);
                 int firstY = contentTop + gapY;
                 int secondY = firstY + rowHeight + gapY;
-                DrawRow(g, "5時間", state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
-                DrawRow(g, "週", state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
         }
 
@@ -609,13 +613,32 @@ namespace AiUsageWebView2
             DrawRefreshIcon(g, refreshX, controlY, keyPrefix + "-refresh", state.IsRefreshing);
         }
 
-        static string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain)
+        string T(string ja, string en)
+        {
+            return English ? en : ja;
+        }
+
+        string StatusText(string status)
+        {
+            switch (status)
+            {
+                case "updating": return T("更新中", "Updating");
+                case "fetch_error": return T("取得エラー", "Fetch error");
+                case "no_data": return T("データなし", "No data");
+                case "login_required": return T("ログインが必要", "Login required");
+                case "no_usage_text": return T("使用量テキストなし", "No usage text");
+                case "starting": return T("起動中", "Starting");
+                default: return status ?? T("データなし", "No data");
+            }
+        }
+
+        static string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain, bool english)
         {
             string raw = "";
             if (fiveRemain.HasValue && fiveRemain.Value <= 0) raw = data.FiveHourReset;
             else if (weekRemain.HasValue && weekRemain.Value <= 0) raw = data.WeeklyReset;
-            string text = ResetText(raw);
-            return text.Replace("リセットまで ", "あと ");
+            string text = ResetText(raw, false, english);
+            return english ? text.Replace("Reset in ", "in ") : text.Replace("リセットまで ", "あと ");
         }
 
         static bool TryGetResetRemaining(string raw, out TimeSpan remaining)
@@ -646,7 +669,7 @@ namespace AiUsageWebView2
         {
             if (!state.BoostUntil.HasValue || state.BoostUntil.Value <= DateTime.Now) return "";
             int min = Math.Max(1, (int)Math.Ceiling((state.BoostUntil.Value - DateTime.Now).TotalMinutes));
-            return "残り" + min + "分";
+            return English ? min + "m left" : "残り" + min + "分";
         }
 
         void DrawRow(Graphics g, string label, int? pct, bool showUsed, bool weekly, string resetText, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
@@ -658,10 +681,11 @@ namespace AiUsageWebView2
             {
             int labelX = x + 18;
             int modeX = labelX + Math.Max(34, (int)Math.Ceiling(g.MeasureString("5時間", labelFont).Width)) + 7;
-            int percentX = modeX + Math.Max(30, (int)Math.Ceiling(g.MeasureString(showUsed ? "使用" : "残り", labelFont).Width)) + 7;
+            string modeText = showUsed ? T("使用", "Used") : T("残り", "Left");
+            int percentX = modeX + Math.Max(30, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 7;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
-            g.DrawString(showUsed ? "使用" : "残り", labelFont, muted, modeX, labelY);
+            g.DrawString(modeText, labelFont, muted, modeX, labelY);
             g.DrawString(empty ? "--" : pct.Value + "%", numFont, pctBrush, percentX, y - 4);
 
             int pctWidth = Math.Max(42, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
@@ -670,7 +694,7 @@ namespace AiUsageWebView2
             int barW = Math.Max(70, w - (barX - x) - 17);
             DrawBar(g, barX, barY, barW, 7, pct, rowColor);
 
-            string reset = ResetText(resetText, weekly);
+            string reset = ResetText(resetText, weekly, English);
             if (!string.IsNullOrEmpty(reset))
                 g.DrawString(reset, resetFont, dim, barX, y + Math.Max(16, (int)Math.Round(settings.PercentFontSize * 0.95)));
             }
@@ -689,49 +713,49 @@ namespace AiUsageWebView2
 
         static string ResetText(string raw)
         {
-            return ResetText(raw, false);
+            return ResetText(raw, false, false);
         }
 
-        static string ResetText(string raw, bool preferAbsolute)
+        static string ResetText(string raw, bool preferAbsolute, bool english)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             var lower = raw.ToLowerInvariant();
             string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
-            if (cleaned.Contains("リセットまで")) return cleaned;
-            var relative = RelativeResetText(cleaned, preferAbsolute);
+            if (cleaned.Contains("リセットまで")) return english ? cleaned.Replace("リセットまで", "Reset in") : cleaned;
+            var relative = RelativeResetText(cleaned, preferAbsolute, english);
             if (!string.IsNullOrEmpty(relative)) return relative;
 
             DateTime target;
             if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}") &&
                 TryParseResetTarget(cleaned, out target))
-                return "リセット " + FormatDateTime(target);
+                return (english ? "Reset " : "リセット ") + FormatDateTime(target);
 
             if (TryParseResetTarget(cleaned, out target))
-                return "リセットまで " + FormatDuration(target - DateTime.Now);
+                return (english ? "Reset in " : "リセットまで ") + FormatDuration(target - DateTime.Now, english);
 
             if (cleaned.Contains("後にリセット"))
             {
                 var s = cleaned.Replace("後にリセット", "").Replace("リセット", "").Trim();
-                return "リセットまで " + s;
+                return english ? "Reset in " + TranslateDurationText(s) : "リセットまで " + s;
             }
             if (lower.Contains("reset"))
             {
                 var m = Regex.Match(cleaned, @"(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})");
-                if (m.Success) return "リセット " + m.Groups[1].Value;
+                if (m.Success) return (english ? "Reset " : "リセット ") + m.Groups[1].Value;
                 return cleaned;
             }
-            return "リセット " + cleaned;
+            return (english ? "Reset " : "リセット ") + cleaned;
         }
 
-        static string RelativeResetText(string text, bool preferAbsolute)
+        static string RelativeResetText(string text, bool preferAbsolute, bool english)
         {
             var m = Regex.Match(text, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
             if (!m.Success) return "";
             int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
             int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
             var span = new TimeSpan(hours, minutes, 0);
-            if (preferAbsolute) return "リセット " + FormatDateTime(DateTime.Now.Add(span));
-            return "リセットまで " + FormatDuration(span);
+            if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatDateTime(DateTime.Now.Add(span));
+            return (english ? "Reset in " : "リセットまで ") + FormatDuration(span, english);
         }
 
         static bool TryParseResetTarget(string text, out DateTime target)
@@ -758,12 +782,27 @@ namespace AiUsageWebView2
 
         static string FormatDuration(TimeSpan span)
         {
-            if (span.TotalSeconds <= 0) return "0分";
+            return FormatDuration(span, false);
+        }
+
+        static string FormatDuration(TimeSpan span, bool english)
+        {
+            if (span.TotalSeconds <= 0) return english ? "0m" : "0分";
             int totalMinutes = Math.Max(0, (int)Math.Ceiling(span.TotalMinutes));
             int hours = totalMinutes / 60;
             int minutes = totalMinutes % 60;
+            if (english)
+            {
+                if (hours > 0) return hours + "h " + minutes + "m";
+                return minutes + "m";
+            }
             if (hours > 0) return hours + "時間" + minutes + "分";
             return minutes + "分";
+        }
+
+        static string TranslateDurationText(string text)
+        {
+            return text.Replace("時間", "h ").Replace("分", "m").Trim();
         }
 
         static string FormatDateTime(DateTime value)
@@ -773,14 +812,15 @@ namespace AiUsageWebView2
 
         void DrawLoginButton(Graphics g, int x, int y, string key)
         {
-            hits[key] = new Rectangle(x, y, 76, 25);
+            int buttonW = English ? 82 : 76;
+            hits[key] = new Rectangle(x, y, buttonW, 25);
             Color bg = hoverKey == key ? Color.FromArgb(64, 64, 66) : Color.FromArgb(46, 46, 48);
             using (var b = new SolidBrush(bg))
-            using (var p = RoundRect(x, y, 76, 25, 8))
+            using (var p = RoundRect(x, y, buttonW, 25, 8))
                 g.FillPath(b, p);
             using (var f = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold))
             using (var white = new SolidBrush(Color.WhiteSmoke))
-                g.DrawString("ログイン", f, white, x + 13, y + 3);
+                g.DrawString(T("ログイン", "Login"), f, white, x + 13, y + 3);
         }
 
         void DrawBadge(Graphics g, string text, int x, int y, Color color)
@@ -965,6 +1005,7 @@ namespace AiUsageWebView2
         readonly WidgetSettings settings;
         readonly WidgetSettings original;
         readonly Action preview;
+        readonly ComboBox language = new ComboBox();
         readonly NumericUpDown normal = new NumericUpDown();
         readonly NumericUpDown boostDuration = new NumericUpDown();
         readonly NumericUpDown boostInterval = new NumericUpDown();
@@ -986,9 +1027,9 @@ namespace AiUsageWebView2
             this.settings = settings;
             this.original = settings.Clone();
             this.preview = preview;
-            Text = "設定";
-            Width = 430;
-            Height = 590;
+            Text = T("設定", "Settings");
+            Width = 520;
+            Height = 632;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -996,29 +1037,30 @@ namespace AiUsageWebView2
             BackColor = Color.FromArgb(24, 24, 26);
             ForeColor = Color.WhiteSmoke;
 
-            AddNumber("通常更新（分）", normal, settings.NormalIntervalMinutes, 18, 18);
-            AddNumber("ブースト時間（分）", boostDuration, settings.BoostDurationMinutes, 18, 60);
-            AddNumber("ブースト更新（分）", boostInterval, settings.BoostIntervalMinutes, 18, 102);
-            AddNumber("直前更新開始（分）", finalWindow, settings.FinalRefreshWindowMinutes, 18, 144, 1, 120);
-            AddNumber("直前更新間隔（分）", finalInterval, settings.FinalRefreshIntervalMinutes, 18, 186, 1, 30);
-            AddMode("Codex 表示", codexMode, settings.CodexShowUsed, 18, 228);
-            AddMode("Claude 表示", claudeMode, settings.ClaudeShowUsed, 18, 270);
-            AddNumber("ラベル文字", labelSize, (int)Math.Round(settings.LabelFontSize), 18, 312, 6, 32);
-            AddNumber("パーセント文字", percentSize, (int)Math.Round(settings.PercentFontSize), 18, 354, 8, 42);
-            AddNumber("リセット文字", resetSize, (int)Math.Round(settings.ResetFontSize), 18, 396, 6, 32);
-            AddNumber("黄色しきい値（残量%）", warningPercent, settings.WarningRemainingPercent, 18, 438, 1, 99);
-            AddNumber("赤しきい値（残量%）", criticalPercent, settings.CriticalRemainingPercent, 18, 480, 1, 99);
-            AddText("黄色", warningColor, settings.WarningColor, 270, 438);
-            AddText("赤", criticalColor, settings.CriticalColor, 270, 480);
+            AddLanguage(T("言語", "Language"), language, settings.Language, 18, 18);
+            AddNumber(T("通常更新（分）", "Normal refresh (min)"), normal, settings.NormalIntervalMinutes, 18, 60);
+            AddNumber(T("ブースト時間（分）", "Boost duration (min)"), boostDuration, settings.BoostDurationMinutes, 18, 102);
+            AddNumber(T("ブースト更新（分）", "Boost refresh (min)"), boostInterval, settings.BoostIntervalMinutes, 18, 144);
+            AddNumber(T("直前更新開始（分）", "Final refresh window (min)"), finalWindow, settings.FinalRefreshWindowMinutes, 18, 186, 1, 120);
+            AddNumber(T("直前更新間隔（分）", "Final refresh interval (min)"), finalInterval, settings.FinalRefreshIntervalMinutes, 18, 228, 1, 30);
+            AddMode("Codex " + T("表示", "display"), codexMode, settings.CodexShowUsed, 18, 270);
+            AddMode("Claude " + T("表示", "display"), claudeMode, settings.ClaudeShowUsed, 18, 312);
+            AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), 18, 354, 6, 32);
+            AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), 18, 396, 8, 42);
+            AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), 18, 438, 6, 32);
+            AddNumber(T("黄色しきい値（残量%）", "Yellow threshold (left %)"), warningPercent, settings.WarningRemainingPercent, 18, 480, 1, 99);
+            AddNumber(T("赤しきい値（残量%）", "Red threshold (left %)"), criticalPercent, settings.CriticalRemainingPercent, 18, 522, 1, 99);
+            AddText(T("黄色", "Yellow"), warningColor, settings.WarningColor, 330, 480);
+            AddText(T("赤", "Red"), criticalColor, settings.CriticalColor, 330, 522);
 
-            topMost.Text = "常に最前面に固定";
+            topMost.Text = T("常に最前面に固定", "Always on top");
             topMost.Checked = settings.AlwaysOnTop;
-            topMost.Location = new Point(22, 516);
+            topMost.Location = new Point(22, 558);
             topMost.Width = 180;
             Controls.Add(topMost);
 
-            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(242, 516), Width = 72 };
-            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(324, 516), Width = 82 };
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(322, 558), Width = 72 };
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(404, 558), Width = 82 };
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
@@ -1046,11 +1088,11 @@ namespace AiUsageWebView2
 
         void AddNumber(string text, NumericUpDown box, int value, int x, int y, int min, int max)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 150, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
             box.Minimum = min;
             box.Maximum = max;
             box.Value = Math.Max(min, Math.Min(max, value));
-            box.Location = new Point(180, y);
+            box.Location = new Point(230, y);
             box.Width = 70;
             Controls.Add(label);
             Controls.Add(box);
@@ -1058,12 +1100,25 @@ namespace AiUsageWebView2
 
         void AddMode(string text, ComboBox box, bool showUsed, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 150, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
             box.DropDownStyle = ComboBoxStyle.DropDownList;
-            box.Items.Add("残量表示");
-            box.Items.Add("使用量表示");
+            box.Items.Add(T("残量表示", "Remaining"));
+            box.Items.Add(T("使用量表示", "Used"));
             box.SelectedIndex = showUsed ? 1 : 0;
-            box.Location = new Point(180, y);
+            box.Location = new Point(230, y);
+            box.Width = 120;
+            Controls.Add(label);
+            Controls.Add(box);
+        }
+
+        void AddLanguage(string text, ComboBox box, string value, int x, int y)
+        {
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
+            box.DropDownStyle = ComboBoxStyle.DropDownList;
+            box.Items.Add("日本語");
+            box.Items.Add("English");
+            box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            box.Location = new Point(230, y);
             box.Width = 120;
             Controls.Add(label);
             Controls.Add(box);
@@ -1087,6 +1142,7 @@ namespace AiUsageWebView2
                 preview();
             };
             normal.ValueChanged += apply;
+            language.SelectedIndexChanged += apply;
             boostDuration.ValueChanged += apply;
             boostInterval.ValueChanged += apply;
             finalWindow.ValueChanged += apply;
@@ -1106,6 +1162,7 @@ namespace AiUsageWebView2
         void ApplyToSettings()
         {
             settings.NormalIntervalMinutes = (int)normal.Value;
+            settings.Language = language.SelectedIndex == 1 ? "en" : "ja";
             settings.BoostDurationMinutes = (int)boostDuration.Value;
             settings.BoostIntervalMinutes = (int)boostInterval.Value;
             settings.FinalRefreshWindowMinutes = (int)finalWindow.Value;
@@ -1120,6 +1177,11 @@ namespace AiUsageWebView2
             settings.WarningColor = NormalizeColorText(warningColor.Text, settings.WarningColor);
             settings.CriticalColor = NormalizeColorText(criticalColor.Text, settings.CriticalColor);
             settings.AlwaysOnTop = topMost.Checked;
+        }
+
+        string T(string ja, string en)
+        {
+            return string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase) ? en : ja;
         }
 
         static string NormalizeColorText(string value, string fallback)
@@ -1147,8 +1209,8 @@ namespace AiUsageWebView2
             Name = name;
             Url = url;
             Accent = accent;
-            Data = new UsageData { Name = name, Source = "starting", Status = "起動中" };
-            Status = "起動中";
+            Data = new UsageData { Name = name, Source = "starting", Status = "starting" };
+            Status = "starting";
         }
 
         public bool BoostActive
@@ -1223,6 +1285,7 @@ namespace AiUsageWebView2
     {
         public int Width = 680;
         public int Height = 170;
+        public string Language = "ja";
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 15;
         public int BoostIntervalMinutes = 1;
@@ -1257,6 +1320,7 @@ namespace AiUsageWebView2
                 string json = File.ReadAllText(SettingsPath);
                 s.Width = ReadInt(json, "width", s.Width);
                 s.Height = ReadInt(json, "height", s.Height);
+                s.Language = ReadString(json, "language", s.Language);
                 s.NormalIntervalMinutes = ReadInt(json, "normalIntervalMinutes", s.NormalIntervalMinutes);
                 s.BoostDurationMinutes = ReadInt(json, "boostDurationMinutes", s.BoostDurationMinutes);
                 s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
@@ -1288,6 +1352,7 @@ namespace AiUsageWebView2
         {
             Width = other.Width;
             Height = other.Height;
+            Language = other.Language;
             NormalIntervalMinutes = other.NormalIntervalMinutes;
             BoostDurationMinutes = other.BoostDurationMinutes;
             BoostIntervalMinutes = other.BoostIntervalMinutes;
@@ -1314,6 +1379,7 @@ namespace AiUsageWebView2
                     "{\r\n" +
                     "  \"width\": " + Width + ",\r\n" +
                     "  \"height\": " + Height + ",\r\n" +
+                    "  \"language\": \"" + Escape(Language) + "\",\r\n" +
                     "  \"normalIntervalMinutes\": " + NormalIntervalMinutes + ",\r\n" +
                     "  \"boostDurationMinutes\": " + BoostDurationMinutes + ",\r\n" +
                     "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +

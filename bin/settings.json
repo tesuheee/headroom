@@ -1,6 +1,7 @@
 {
   "width": 680,
   "height": 170,
+  "language": "ja",
   "normalIntervalMinutes": 15,
   "boostDurationMinutes": 15,
   "boostIntervalMinutes": 1,
