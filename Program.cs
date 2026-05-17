@@ -475,8 +475,7 @@ namespace AiUsageWebView2
             bool exhausted = (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
             bool stale = state.LastRefresh != DateTime.MinValue &&
                 DateTime.Now - state.LastRefresh > TimeSpan.FromMinutes(Math.Max(2, settings.NormalIntervalMinutes * 2));
-            Color baseCard = settings.ParseColor(settings.CardColor, Color.FromArgb(28, 28, 30));
-            Color cardColor = exhausted ? Color.FromArgb(38, 24, 24) : (stale ? Color.FromArgb(34, 31, 23) : baseCard);
+            Color cardColor = exhausted ? Color.FromArgb(38, 24, 24) : (stale ? Color.FromArgb(34, 31, 23) : Color.FromArgb(28, 28, 30));
             Color accent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
 
             using (var bg = new SolidBrush(cardColor))
@@ -488,12 +487,12 @@ namespace AiUsageWebView2
             }
 
             using (var title = new Font("Yu Gothic UI", 13.5f, FontStyle.Bold))
-            using (var label = new Font("Yu Gothic UI", settings.LabelFontSize, settings.LabelBold ? FontStyle.Bold : FontStyle.Regular))
-            using (var reset = new Font("Yu Gothic UI", settings.ResetFontSize, settings.ResetBold ? FontStyle.Bold : FontStyle.Regular))
-            using (var num = new Font("Segoe UI", settings.PercentFontSize, settings.PercentBold ? FontStyle.Bold : FontStyle.Regular))
-            using (var white = new SolidBrush(settings.ParseColor(settings.TextColor, Color.FromArgb(248, 248, 248))))
-            using (var muted = new SolidBrush(settings.ParseColor(settings.LabelColor, Color.FromArgb(205, 205, 205))))
-            using (var dim = new SolidBrush(settings.ParseColor(settings.ResetColor, Color.FromArgb(155, 155, 155))))
+            using (var label = new Font("Yu Gothic UI", settings.LabelFontSize, FontStyle.Regular))
+            using (var reset = new Font("Yu Gothic UI", settings.ResetFontSize, FontStyle.Regular))
+            using (var num = new Font("Segoe UI", settings.PercentFontSize, FontStyle.Bold))
+            using (var white = new SolidBrush(Color.FromArgb(248, 248, 248)))
+            using (var muted = new SolidBrush(Color.FromArgb(205, 205, 205)))
+            using (var dim = new SolidBrush(Color.FromArgb(155, 155, 155)))
             {
                 g.DrawString(state.Name, title, white, x + 18, y + 11);
                 if (stale)
@@ -559,7 +558,7 @@ namespace AiUsageWebView2
         void DrawRow(Graphics g, string label, int? pct, bool showUsed, string resetText, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
         {
             bool empty = !pct.HasValue;
-            bool limit = pct.HasValue && (showUsed ? pct.Value >= 95 : pct.Value <= 5);
+            bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
             Color rowColor = RowColor(pct, showUsed, accent);
             using (var pctBrush = new SolidBrush(limit ? Color.FromArgb(255, 145, 145) : Color.FromArgb(248, 248, 248)))
             {
@@ -585,18 +584,14 @@ namespace AiUsageWebView2
             }
         }
 
-        static Color RowColor(int? pct, bool showUsed, Color normal)
+        Color RowColor(int? pct, bool showUsed, Color normal)
         {
             if (!pct.HasValue) return normal;
-            int value = pct.Value;
-            if (showUsed)
-            {
-                if (value >= 90) return Color.FromArgb(224, 73, 73);
-                if (value >= 70) return Color.FromArgb(232, 169, 36);
-                return normal;
-            }
-            if (value <= 10) return Color.FromArgb(224, 73, 73);
-            if (value <= 30) return Color.FromArgb(232, 169, 36);
+            int remaining = showUsed ? 100 - pct.Value : pct.Value;
+            if (remaining <= settings.CriticalRemainingPercent)
+                return settings.ParseColor(settings.CriticalColor, Color.FromArgb(224, 73, 73));
+            if (remaining <= settings.WarningRemainingPercent)
+                return settings.ParseColor(settings.WarningColor, Color.FromArgb(232, 169, 36));
             return normal;
         }
 
@@ -764,7 +759,11 @@ namespace AiUsageWebView2
 
         void ShowSettingsDialog()
         {
-            using (var dlg = new SettingsForm(settings))
+            using (var dlg = new SettingsForm(settings, () =>
+            {
+                TopMost = settings.AlwaysOnTop;
+                Invalidate();
+            }))
             {
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
@@ -798,6 +797,8 @@ namespace AiUsageWebView2
     sealed class SettingsForm : Form
     {
         readonly WidgetSettings settings;
+        readonly WidgetSettings original;
+        readonly Action preview;
         readonly NumericUpDown normal = new NumericUpDown();
         readonly NumericUpDown boostDuration = new NumericUpDown();
         readonly NumericUpDown boostInterval = new NumericUpDown();
@@ -807,20 +808,19 @@ namespace AiUsageWebView2
         readonly NumericUpDown labelSize = new NumericUpDown();
         readonly NumericUpDown percentSize = new NumericUpDown();
         readonly NumericUpDown resetSize = new NumericUpDown();
-        readonly CheckBox labelBold = new CheckBox();
-        readonly CheckBox percentBold = new CheckBox();
-        readonly CheckBox resetBold = new CheckBox();
-        readonly TextBox textColor = new TextBox();
-        readonly TextBox labelColor = new TextBox();
-        readonly TextBox resetColor = new TextBox();
-        readonly TextBox cardColor = new TextBox();
+        readonly NumericUpDown warningPercent = new NumericUpDown();
+        readonly NumericUpDown criticalPercent = new NumericUpDown();
+        readonly TextBox warningColor = new TextBox();
+        readonly TextBox criticalColor = new TextBox();
 
-        public SettingsForm(WidgetSettings settings)
+        public SettingsForm(WidgetSettings settings, Action preview)
         {
             this.settings = settings;
+            this.original = settings.Clone();
+            this.preview = preview;
             Text = "設定";
             Width = 390;
-            Height = 540;
+            Height = 500;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -836,47 +836,37 @@ namespace AiUsageWebView2
             AddNumber("ラベル文字", labelSize, (int)Math.Round(settings.LabelFontSize), 18, 228, 6, 32);
             AddNumber("パーセント文字", percentSize, (int)Math.Round(settings.PercentFontSize), 18, 270, 8, 42);
             AddNumber("リセット文字", resetSize, (int)Math.Round(settings.ResetFontSize), 18, 312, 6, 32);
-
-            AddCheck("ラベル太字", labelBold, settings.LabelBold, 266, 232);
-            AddCheck("数値太字", percentBold, settings.PercentBold, 266, 274);
-            AddCheck("リセット太字", resetBold, settings.ResetBold, 266, 316);
-
-            AddText("数値色", textColor, settings.TextColor, 18, 356);
-            AddText("ラベル色", labelColor, settings.LabelColor, 18, 392);
-            AddText("リセット色", resetColor, settings.ResetColor, 190, 356);
-            AddText("背景色", cardColor, settings.CardColor, 190, 392);
+            AddNumber("黄色しきい値（残量%）", warningPercent, settings.WarningRemainingPercent, 18, 354, 1, 99);
+            AddNumber("赤しきい値（残量%）", criticalPercent, settings.CriticalRemainingPercent, 18, 396, 1, 99);
+            AddText("黄色", warningColor, settings.WarningColor, 266, 354);
+            AddText("赤", criticalColor, settings.CriticalColor, 266, 396);
 
             topMost.Text = "常に最前面に固定";
             topMost.Checked = settings.AlwaysOnTop;
-            topMost.Location = new Point(22, 434);
+            topMost.Location = new Point(22, 430);
             topMost.Width = 180;
             Controls.Add(topMost);
 
-            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(202, 468), Width = 72 };
-            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(284, 468), Width = 82 };
+            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(202, 430), Width = 72 };
+            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(284, 430), Width = 82 };
             ok.Click += (s, e) =>
             {
-                settings.NormalIntervalMinutes = (int)normal.Value;
-                settings.BoostDurationMinutes = (int)boostDuration.Value;
-                settings.BoostIntervalMinutes = (int)boostInterval.Value;
-                settings.CodexShowUsed = codexMode.SelectedIndex == 1;
-                settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
-                settings.LabelFontSize = (float)labelSize.Value;
-                settings.PercentFontSize = (float)percentSize.Value;
-                settings.ResetFontSize = (float)resetSize.Value;
-                settings.LabelBold = labelBold.Checked;
-                settings.PercentBold = percentBold.Checked;
-                settings.ResetBold = resetBold.Checked;
-                settings.TextColor = NormalizeColorText(textColor.Text, settings.TextColor);
-                settings.LabelColor = NormalizeColorText(labelColor.Text, settings.LabelColor);
-                settings.ResetColor = NormalizeColorText(resetColor.Text, settings.ResetColor);
-                settings.CardColor = NormalizeColorText(cardColor.Text, settings.CardColor);
-                settings.AlwaysOnTop = topMost.Checked;
+                ApplyToSettings();
             };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
             CancelButton = cancel;
+
+            WireLivePreview();
+            FormClosed += (s, e) =>
+            {
+                if (DialogResult != DialogResult.OK)
+                {
+                    settings.CopyFrom(original);
+                    preview();
+                }
+            };
         }
 
         void AddNumber(string text, NumericUpDown box, int value, int x, int y)
@@ -909,24 +899,53 @@ namespace AiUsageWebView2
             Controls.Add(box);
         }
 
-        void AddCheck(string text, CheckBox box, bool value, int x, int y)
-        {
-            box.Text = text;
-            box.Checked = value;
-            box.Location = new Point(x, y);
-            box.Width = 100;
-            box.ForeColor = Color.WhiteSmoke;
-            Controls.Add(box);
-        }
-
         void AddText(string text, TextBox box, string value, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 68, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 40, ForeColor = Color.WhiteSmoke };
             box.Text = value;
-            box.Location = new Point(x + 70, y);
+            box.Location = new Point(x + 42, y);
             box.Width = 78;
             Controls.Add(label);
             Controls.Add(box);
+        }
+
+        void WireLivePreview()
+        {
+            EventHandler apply = (s, e) =>
+            {
+                ApplyToSettings();
+                preview();
+            };
+            normal.ValueChanged += apply;
+            boostDuration.ValueChanged += apply;
+            boostInterval.ValueChanged += apply;
+            codexMode.SelectedIndexChanged += apply;
+            claudeMode.SelectedIndexChanged += apply;
+            labelSize.ValueChanged += apply;
+            percentSize.ValueChanged += apply;
+            resetSize.ValueChanged += apply;
+            warningPercent.ValueChanged += apply;
+            criticalPercent.ValueChanged += apply;
+            topMost.CheckedChanged += apply;
+            warningColor.TextChanged += apply;
+            criticalColor.TextChanged += apply;
+        }
+
+        void ApplyToSettings()
+        {
+            settings.NormalIntervalMinutes = (int)normal.Value;
+            settings.BoostDurationMinutes = (int)boostDuration.Value;
+            settings.BoostIntervalMinutes = (int)boostInterval.Value;
+            settings.CodexShowUsed = codexMode.SelectedIndex == 1;
+            settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
+            settings.LabelFontSize = (float)labelSize.Value;
+            settings.PercentFontSize = (float)percentSize.Value;
+            settings.ResetFontSize = (float)resetSize.Value;
+            settings.WarningRemainingPercent = Math.Max((int)criticalPercent.Value, (int)warningPercent.Value);
+            settings.CriticalRemainingPercent = Math.Min((int)criticalPercent.Value, settings.WarningRemainingPercent);
+            settings.WarningColor = NormalizeColorText(warningColor.Text, settings.WarningColor);
+            settings.CriticalColor = NormalizeColorText(criticalColor.Text, settings.CriticalColor);
+            settings.AlwaysOnTop = topMost.Checked;
         }
 
         static string NormalizeColorText(string value, string fallback)
@@ -1039,13 +1058,10 @@ namespace AiUsageWebView2
         public float LabelFontSize = 10.8f;
         public float PercentFontSize = 16.5f;
         public float ResetFontSize = 9.9f;
-        public bool LabelBold = false;
-        public bool PercentBold = true;
-        public bool ResetBold = false;
-        public string TextColor = "#F8F8F8";
-        public string LabelColor = "#CDCDCD";
-        public string ResetColor = "#9B9B9B";
-        public string CardColor = "#1C1C1E";
+        public int WarningRemainingPercent = 30;
+        public int CriticalRemainingPercent = 15;
+        public string WarningColor = "#E8A924";
+        public string CriticalColor = "#E04949";
 
         static string SettingsPath
         {
@@ -1074,16 +1090,39 @@ namespace AiUsageWebView2
                 s.LabelFontSize = ReadFloat(json, "labelFontSize", s.LabelFontSize);
                 s.PercentFontSize = ReadFloat(json, "percentFontSize", s.PercentFontSize);
                 s.ResetFontSize = ReadFloat(json, "resetFontSize", s.ResetFontSize);
-                s.LabelBold = ReadBool(json, "labelBold", s.LabelBold);
-                s.PercentBold = ReadBool(json, "percentBold", s.PercentBold);
-                s.ResetBold = ReadBool(json, "resetBold", s.ResetBold);
-                s.TextColor = ReadString(json, "textColor", s.TextColor);
-                s.LabelColor = ReadString(json, "labelColor", s.LabelColor);
-                s.ResetColor = ReadString(json, "resetColor", s.ResetColor);
-                s.CardColor = ReadString(json, "cardColor", s.CardColor);
+                s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
+                s.CriticalRemainingPercent = ReadInt(json, "criticalRemainingPercent", s.CriticalRemainingPercent);
+                s.WarningColor = ReadString(json, "warningColor", s.WarningColor);
+                s.CriticalColor = ReadString(json, "criticalColor", s.CriticalColor);
             }
             catch { }
             return s;
+        }
+
+        public WidgetSettings Clone()
+        {
+            var copy = new WidgetSettings();
+            copy.CopyFrom(this);
+            return copy;
+        }
+
+        public void CopyFrom(WidgetSettings other)
+        {
+            Width = other.Width;
+            Height = other.Height;
+            NormalIntervalMinutes = other.NormalIntervalMinutes;
+            BoostDurationMinutes = other.BoostDurationMinutes;
+            BoostIntervalMinutes = other.BoostIntervalMinutes;
+            AlwaysOnTop = other.AlwaysOnTop;
+            CodexShowUsed = other.CodexShowUsed;
+            ClaudeShowUsed = other.ClaudeShowUsed;
+            LabelFontSize = other.LabelFontSize;
+            PercentFontSize = other.PercentFontSize;
+            ResetFontSize = other.ResetFontSize;
+            WarningRemainingPercent = other.WarningRemainingPercent;
+            CriticalRemainingPercent = other.CriticalRemainingPercent;
+            WarningColor = other.WarningColor;
+            CriticalColor = other.CriticalColor;
         }
 
         public void Save()
@@ -1104,13 +1143,10 @@ namespace AiUsageWebView2
                     "  \"labelFontSize\": " + FormatFloat(LabelFontSize) + ",\r\n" +
                     "  \"percentFontSize\": " + FormatFloat(PercentFontSize) + ",\r\n" +
                     "  \"resetFontSize\": " + FormatFloat(ResetFontSize) + ",\r\n" +
-                    "  \"labelBold\": " + (LabelBold ? "true" : "false") + ",\r\n" +
-                    "  \"percentBold\": " + (PercentBold ? "true" : "false") + ",\r\n" +
-                    "  \"resetBold\": " + (ResetBold ? "true" : "false") + ",\r\n" +
-                    "  \"textColor\": \"" + Escape(TextColor) + "\",\r\n" +
-                    "  \"labelColor\": \"" + Escape(LabelColor) + "\",\r\n" +
-                    "  \"resetColor\": \"" + Escape(ResetColor) + "\",\r\n" +
-                    "  \"cardColor\": \"" + Escape(CardColor) + "\"\r\n" +
+                    "  \"warningRemainingPercent\": " + WarningRemainingPercent + ",\r\n" +
+                    "  \"criticalRemainingPercent\": " + CriticalRemainingPercent + ",\r\n" +
+                    "  \"warningColor\": \"" + Escape(WarningColor) + "\",\r\n" +
+                    "  \"criticalColor\": \"" + Escape(CriticalColor) + "\"\r\n" +
                     "}\r\n");
             }
             catch { }

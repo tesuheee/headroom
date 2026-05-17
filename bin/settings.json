@@ -1,6 +1,6 @@
 {
-  "width": 735,
-  "height": 220,
+  "width": 680,
+  "height": 170,
   "normalIntervalMinutes": 15,
   "boostDurationMinutes": 15,
   "boostIntervalMinutes": 1,
@@ -10,11 +10,8 @@
   "labelFontSize": 10.8,
   "percentFontSize": 16.5,
   "resetFontSize": 9.9,
-  "labelBold": false,
-  "percentBold": true,
-  "resetBold": false,
-  "textColor": "#F8F8F8",
-  "labelColor": "#CDCDCD",
-  "resetColor": "#9B9B9B",
-  "cardColor": "#1C1C1E"
+  "warningRemainingPercent": 30,
+  "criticalRemainingPercent": 15,
+  "warningColor": "#E8A924",
+  "criticalColor": "#E04949"
 }
