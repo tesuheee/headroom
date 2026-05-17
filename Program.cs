@@ -128,9 +128,20 @@ namespace AiUsageWebView2
             if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
                 service.BoostUntil = null;
 
-            int minutes = service.BoostUntil.HasValue ? settings.BoostIntervalMinutes : settings.NormalIntervalMinutes;
+            int minutes = RefreshIntervalMinutes(service);
             if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= TimeSpan.FromMinutes(Math.Max(1, minutes)))
                 await RefreshServiceAsync(service, view, false);
+        }
+
+        int RefreshIntervalMinutes(ServiceState service)
+        {
+            if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
+            TimeSpan untilReset;
+            if (TryGetResetRemaining(service.Data.FiveHourReset, out untilReset) &&
+                untilReset.TotalMinutes > 0 &&
+                untilReset.TotalMinutes <= settings.FinalRefreshWindowMinutes)
+                return settings.FinalRefreshIntervalMinutes;
+            return settings.NormalIntervalMinutes;
         }
 
         async Task RefreshAllAsync(bool manual)
@@ -584,6 +595,30 @@ namespace AiUsageWebView2
             return text.Replace("リセットまで ", "あと ");
         }
 
+        static bool TryGetResetRemaining(string raw, out TimeSpan remaining)
+        {
+            remaining = TimeSpan.Zero;
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+            string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
+
+            var relative = Regex.Match(cleaned, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
+            if (relative.Success)
+            {
+                int hours = relative.Groups[1].Success ? int.Parse(relative.Groups[1].Value) : 0;
+                int minutes = relative.Groups[2].Success ? int.Parse(relative.Groups[2].Value) : 0;
+                remaining = new TimeSpan(hours, minutes, 0);
+                return true;
+            }
+
+            DateTime target;
+            if (TryParseResetTarget(cleaned, out target))
+            {
+                remaining = target - DateTime.Now;
+                return true;
+            }
+            return false;
+        }
+
         string BoostText(ServiceState state)
         {
             if (!state.BoostUntil.HasValue || state.BoostUntil.Value <= DateTime.Now) return "";
@@ -894,6 +929,8 @@ namespace AiUsageWebView2
         readonly NumericUpDown normal = new NumericUpDown();
         readonly NumericUpDown boostDuration = new NumericUpDown();
         readonly NumericUpDown boostInterval = new NumericUpDown();
+        readonly NumericUpDown finalWindow = new NumericUpDown();
+        readonly NumericUpDown finalInterval = new NumericUpDown();
         readonly CheckBox topMost = new CheckBox();
         readonly ComboBox codexMode = new ComboBox();
         readonly ComboBox claudeMode = new ComboBox();
@@ -912,7 +949,7 @@ namespace AiUsageWebView2
             this.preview = preview;
             Text = "設定";
             Width = 430;
-            Height = 500;
+            Height = 590;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -923,24 +960,26 @@ namespace AiUsageWebView2
             AddNumber("通常更新（分）", normal, settings.NormalIntervalMinutes, 18, 18);
             AddNumber("ブースト時間（分）", boostDuration, settings.BoostDurationMinutes, 18, 60);
             AddNumber("ブースト更新（分）", boostInterval, settings.BoostIntervalMinutes, 18, 102);
-            AddMode("Codex 表示", codexMode, settings.CodexShowUsed, 18, 144);
-            AddMode("Claude 表示", claudeMode, settings.ClaudeShowUsed, 18, 186);
-            AddNumber("ラベル文字", labelSize, (int)Math.Round(settings.LabelFontSize), 18, 228, 6, 32);
-            AddNumber("パーセント文字", percentSize, (int)Math.Round(settings.PercentFontSize), 18, 270, 8, 42);
-            AddNumber("リセット文字", resetSize, (int)Math.Round(settings.ResetFontSize), 18, 312, 6, 32);
-            AddNumber("黄色しきい値（残量%）", warningPercent, settings.WarningRemainingPercent, 18, 354, 1, 99);
-            AddNumber("赤しきい値（残量%）", criticalPercent, settings.CriticalRemainingPercent, 18, 396, 1, 99);
-            AddText("黄色", warningColor, settings.WarningColor, 270, 354);
-            AddText("赤", criticalColor, settings.CriticalColor, 270, 396);
+            AddNumber("直前更新開始（分）", finalWindow, settings.FinalRefreshWindowMinutes, 18, 144, 1, 120);
+            AddNumber("直前更新間隔（分）", finalInterval, settings.FinalRefreshIntervalMinutes, 18, 186, 1, 30);
+            AddMode("Codex 表示", codexMode, settings.CodexShowUsed, 18, 228);
+            AddMode("Claude 表示", claudeMode, settings.ClaudeShowUsed, 18, 270);
+            AddNumber("ラベル文字", labelSize, (int)Math.Round(settings.LabelFontSize), 18, 312, 6, 32);
+            AddNumber("パーセント文字", percentSize, (int)Math.Round(settings.PercentFontSize), 18, 354, 8, 42);
+            AddNumber("リセット文字", resetSize, (int)Math.Round(settings.ResetFontSize), 18, 396, 6, 32);
+            AddNumber("黄色しきい値（残量%）", warningPercent, settings.WarningRemainingPercent, 18, 438, 1, 99);
+            AddNumber("赤しきい値（残量%）", criticalPercent, settings.CriticalRemainingPercent, 18, 480, 1, 99);
+            AddText("黄色", warningColor, settings.WarningColor, 270, 438);
+            AddText("赤", criticalColor, settings.CriticalColor, 270, 480);
 
             topMost.Text = "常に最前面に固定";
             topMost.Checked = settings.AlwaysOnTop;
-            topMost.Location = new Point(22, 430);
+            topMost.Location = new Point(22, 516);
             topMost.Width = 180;
             Controls.Add(topMost);
 
-            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(242, 430), Width = 72 };
-            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(324, 430), Width = 82 };
+            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(242, 516), Width = 72 };
+            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(324, 516), Width = 82 };
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
@@ -1011,6 +1050,8 @@ namespace AiUsageWebView2
             normal.ValueChanged += apply;
             boostDuration.ValueChanged += apply;
             boostInterval.ValueChanged += apply;
+            finalWindow.ValueChanged += apply;
+            finalInterval.ValueChanged += apply;
             codexMode.SelectedIndexChanged += apply;
             claudeMode.SelectedIndexChanged += apply;
             labelSize.ValueChanged += apply;
@@ -1028,6 +1069,8 @@ namespace AiUsageWebView2
             settings.NormalIntervalMinutes = (int)normal.Value;
             settings.BoostDurationMinutes = (int)boostDuration.Value;
             settings.BoostIntervalMinutes = (int)boostInterval.Value;
+            settings.FinalRefreshWindowMinutes = (int)finalWindow.Value;
+            settings.FinalRefreshIntervalMinutes = (int)finalInterval.Value;
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
             settings.LabelFontSize = (float)labelSize.Value;
@@ -1144,6 +1187,8 @@ namespace AiUsageWebView2
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 15;
         public int BoostIntervalMinutes = 1;
+        public int FinalRefreshWindowMinutes = 15;
+        public int FinalRefreshIntervalMinutes = 1;
         public bool AlwaysOnTop = true;
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
@@ -1176,6 +1221,8 @@ namespace AiUsageWebView2
                 s.NormalIntervalMinutes = ReadInt(json, "normalIntervalMinutes", s.NormalIntervalMinutes);
                 s.BoostDurationMinutes = ReadInt(json, "boostDurationMinutes", s.BoostDurationMinutes);
                 s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
+                s.FinalRefreshWindowMinutes = ReadInt(json, "finalRefreshWindowMinutes", s.FinalRefreshWindowMinutes);
+                s.FinalRefreshIntervalMinutes = ReadInt(json, "finalRefreshIntervalMinutes", s.FinalRefreshIntervalMinutes);
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
                 s.CodexShowUsed = ReadBool(json, "codexShowUsed", s.CodexShowUsed);
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
@@ -1205,6 +1252,8 @@ namespace AiUsageWebView2
             NormalIntervalMinutes = other.NormalIntervalMinutes;
             BoostDurationMinutes = other.BoostDurationMinutes;
             BoostIntervalMinutes = other.BoostIntervalMinutes;
+            FinalRefreshWindowMinutes = other.FinalRefreshWindowMinutes;
+            FinalRefreshIntervalMinutes = other.FinalRefreshIntervalMinutes;
             AlwaysOnTop = other.AlwaysOnTop;
             CodexShowUsed = other.CodexShowUsed;
             ClaudeShowUsed = other.ClaudeShowUsed;
@@ -1229,6 +1278,8 @@ namespace AiUsageWebView2
                     "  \"normalIntervalMinutes\": " + NormalIntervalMinutes + ",\r\n" +
                     "  \"boostDurationMinutes\": " + BoostDurationMinutes + ",\r\n" +
                     "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +
+                    "  \"finalRefreshWindowMinutes\": " + FinalRefreshWindowMinutes + ",\r\n" +
+                    "  \"finalRefreshIntervalMinutes\": " + FinalRefreshIntervalMinutes + ",\r\n" +
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
                     "  \"codexShowUsed\": " + (CodexShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
