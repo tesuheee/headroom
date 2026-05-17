@@ -511,7 +511,7 @@ namespace AiUsageWebView2
             using (var num = new Font("Segoe UI", settings.PercentFontSize, FontStyle.Bold))
             using (var white = new SolidBrush(Color.FromArgb(248, 248, 248)))
             using (var muted = new SolidBrush(Color.FromArgb(205, 205, 205)))
-            using (var dim = new SolidBrush(Color.FromArgb(155, 155, 155)))
+            using (var dim = new SolidBrush(Color.FromArgb(205, 205, 205)))
             {
                 g.DrawString(state.Name, title, white, x + 18, y + 11);
                 if (stale)
