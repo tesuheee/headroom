@@ -270,28 +270,22 @@ namespace AiUsageWebView2
             }
 
             var lines = SplitLines(text);
-            var raw = new List<int>();
-            for (int i = 0; i < lines.Count; i++)
+            int sessionStart = FindIndex(lines, "現在のセッション|Current session");
+            int weeklyStart = FindIndex(lines, "週間制限|すべてのモデル|Weekly limit|All models");
+            int designStart = FindIndex(lines, "Claude Design");
+
+            if (sessionStart >= 0)
             {
-                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*使用済み");
-                if (!m.Success) continue;
-                int used = int.Parse(m.Groups[1].Value);
-                raw.Add(used);
-                string nearby = string.Join(" / ", lines.Skip(Math.Max(0, i - 4)).Take(8));
-                if (!data.FiveHourUsed.HasValue && Regex.IsMatch(nearby, "現在のセッション|時間.*後にリセット|分.*後にリセット|5時間"))
-                {
-                    data.FiveHourUsed = used;
-                    data.FiveHourReset = FindReset(lines, i);
-                    continue;
-                }
-                if (!data.WeeklyUsed.HasValue && Regex.IsMatch(nearby, "週間制限|すべてのモデル|月\\)にリセット|週"))
-                {
-                    data.WeeklyUsed = used;
-                    data.WeeklyReset = FindReset(lines, i);
-                }
+                int end = FirstPositive(lines.Count, weeklyStart, designStart);
+                data.FiveHourUsed = FindUsedPercent(lines, sessionStart, end);
+                data.FiveHourReset = FindResetInRange(lines, sessionStart, end);
             }
-            if (!data.FiveHourUsed.HasValue && raw.Count > 0) data.FiveHourUsed = raw[0];
-            if (!data.WeeklyUsed.HasValue && raw.Count > 1) data.WeeklyUsed = raw[1];
+            if (weeklyStart >= 0)
+            {
+                int end = FirstPositive(lines.Count, designStart);
+                data.WeeklyUsed = FindUsedPercent(lines, weeklyStart, end);
+                data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
+            }
             if (!data.HasAnyValue()) data.Status = "使用量テキストなし";
             return data;
         }
@@ -312,31 +306,22 @@ namespace AiUsageWebView2
             }
 
             var lines = SplitLines(text);
-            var remaining = new List<int>();
-            for (int i = 0; i < lines.Count; i++)
+            int fiveStart = FindIndex(lines, "5時間の使用制限|5 hour");
+            int weeklyStart = FindIndex(lines, "週あたりの使用制限|weekly");
+            int creditStart = FindIndex(lines, "残りのクレジット|credits");
+
+            if (fiveStart >= 0)
             {
-                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*(残り|remaining)?", RegexOptions.IgnoreCase);
-                if (!m.Success) continue;
-                bool hasRemainingWord = m.Groups[2].Success ||
-                    lines.Skip(i + 1).Take(2).Any(x => Regex.IsMatch(x, "^(残り|remaining)$", RegexOptions.IgnoreCase));
-                if (!hasRemainingWord) continue;
-                int value = int.Parse(m.Groups[1].Value);
-                remaining.Add(value);
-                string nearby = string.Join(" / ", lines.Skip(Math.Max(0, i - 5)).Take(10));
-                if (!data.FiveHourRemaining.HasValue && Regex.IsMatch(nearby, "5時間|5 hour|session", RegexOptions.IgnoreCase))
-                {
-                    data.FiveHourRemaining = value;
-                    data.FiveHourReset = FindReset(lines, i);
-                    continue;
-                }
-                if (!data.WeeklyRemaining.HasValue && Regex.IsMatch(nearby, "週|week", RegexOptions.IgnoreCase))
-                {
-                    data.WeeklyRemaining = value;
-                    data.WeeklyReset = FindReset(lines, i);
-                }
+                int end = FirstPositive(lines.Count, weeklyStart, creditStart);
+                data.FiveHourRemaining = FindRemainingPercent(lines, fiveStart, end);
+                data.FiveHourReset = FindResetInRange(lines, fiveStart, end);
             }
-            if (!data.FiveHourRemaining.HasValue && remaining.Count > 0) data.FiveHourRemaining = remaining[0];
-            if (!data.WeeklyRemaining.HasValue && remaining.Count > 1) data.WeeklyRemaining = remaining[1];
+            if (weeklyStart >= 0)
+            {
+                int end = FirstPositive(lines.Count, creditStart);
+                data.WeeklyRemaining = FindRemainingPercent(lines, weeklyStart, end);
+                data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
+            }
             if (!data.HasAnyValue()) data.Status = "使用量テキストなし";
             return data;
         }
@@ -347,10 +332,48 @@ namespace AiUsageWebView2
                 .Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
         }
 
-        static string FindReset(List<string> lines, int index)
+        static int FindIndex(List<string> lines, string pattern)
         {
-            return lines.Skip(Math.Max(0, index - 3)).Take(8)
-                .FirstOrDefault(x => Regex.IsMatch(x, "リセット|reset", RegexOptions.IgnoreCase));
+            for (int i = 0; i < lines.Count; i++)
+                if (Regex.IsMatch(lines[i], pattern, RegexOptions.IgnoreCase))
+                    return i;
+            return -1;
+        }
+
+        static int FirstPositive(int fallback, params int[] values)
+        {
+            return values.Where(x => x >= 0).DefaultIfEmpty(fallback).Min();
+        }
+
+        static int? FindUsedPercent(List<string> lines, int start, int end)
+        {
+            for (int i = start; i < Math.Min(end, lines.Count); i++)
+            {
+                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*使用済み");
+                if (m.Success) return int.Parse(m.Groups[1].Value);
+            }
+            return null;
+        }
+
+        static int? FindRemainingPercent(List<string> lines, int start, int end)
+        {
+            for (int i = start; i < Math.Min(end, lines.Count); i++)
+            {
+                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*(残り|remaining)?", RegexOptions.IgnoreCase);
+                if (!m.Success) continue;
+                bool hasRemainingWord = m.Groups[2].Success ||
+                    lines.Skip(i + 1).Take(Math.Min(2, end - i - 1)).Any(x => Regex.IsMatch(x, "^(残り|remaining)$", RegexOptions.IgnoreCase));
+                if (hasRemainingWord) return int.Parse(m.Groups[1].Value);
+            }
+            return null;
+        }
+
+        static string FindResetInRange(List<string> lines, int start, int end)
+        {
+            for (int i = start; i < Math.Min(end, lines.Count); i++)
+                if (Regex.IsMatch(lines[i], "リセット|reset", RegexOptions.IgnoreCase))
+                    return lines[i];
+            return null;
         }
 
         void OnMouseDown(object sender, MouseEventArgs e)
@@ -672,6 +695,9 @@ namespace AiUsageWebView2
             if (cleaned.Contains("リセットまで")) return cleaned;
             var relative = RelativeResetText(cleaned);
             if (!string.IsNullOrEmpty(relative)) return relative;
+
+            if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}"))
+                return "リセット " + cleaned;
 
             DateTime target;
             if (TryParseResetTarget(cleaned, out target))
