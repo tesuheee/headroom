@@ -2,7 +2,7 @@
 
 Claude と Codex の API 使用量をデスクトップに常時表示する Windows アプリです。
 
-![screenshot](docs/screenshot.png)
+![screenshot](docs/screenshot-v2.png)
 
 ## できること
 
