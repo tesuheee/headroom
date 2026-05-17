@@ -432,9 +432,9 @@ namespace AiUsageWebView2
 
             int y = 6;
             int gap = 10;
-            int sideRail = 16;
+            int sideRail = 14;
             int cardW = Math.Max(240, (ClientSize.Width - sideRail - 22 - gap) / 2);
-            int cardH = ClientSize.Height - y - 12;
+            int cardH = ClientSize.Height - y - 5;
             DrawService(g, codex, 8, y, cardW, cardH, "codex");
             DrawService(g, claude, 18 + cardW, y, cardW, cardH, "claude");
             DrawSideRail(g);
@@ -443,28 +443,28 @@ namespace AiUsageWebView2
 
         void DrawSideRail(Graphics g)
         {
-            int x = ClientSize.Width - 23;
+            int x = ClientSize.Width - 22;
             int pinY = 12;
-            int settingsY = 46;
-            hits["pin"] = new Rectangle(x - 5, pinY - 5, 26, 28);
-            hits["settings"] = new Rectangle(x - 5, settingsY - 5, 26, 28);
+            int settingsY = 44;
+            hits["pin"] = new Rectangle(x - 4, pinY - 4, 24, 24);
+            hits["settings"] = new Rectangle(x - 4, settingsY - 4, 24, 24);
 
-            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), DrawPinIcon);
-            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(135, 135, 135), DrawGearIcon);
+            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), "\uE718");
+            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(150, 150, 150), "\uE713");
         }
 
-        delegate void IconPainter(Graphics g, Rectangle r, Color color);
-
-        void DrawIconButton(Graphics g, string key, int x, int y, Color color, IconPainter painter)
+        void DrawIconButton(Graphics g, string key, int x, int y, Color color, string glyph)
         {
-            var r = new Rectangle(x - 1, y - 1, 22, 22);
+            var r = new Rectangle(x - 1, y - 1, 20, 20);
             if (hoverKey == key)
             {
                 using (var bg = new SolidBrush(Color.FromArgb(44, 44, 46)))
                 using (var path = RoundRect(r.X - 2, r.Y - 2, r.Width + 4, r.Height + 4, 10))
                     g.FillPath(bg, path);
             }
-            painter(g, r, color);
+            using (var f = new Font("Segoe MDL2 Assets", 12.5f, FontStyle.Regular))
+            using (var b = new SolidBrush(color))
+                g.DrawString(glyph, f, b, r.X + 1, r.Y + 1);
         }
 
         void DrawService(Graphics g, ServiceState state, int x, int y, int w, int h, string keyPrefix)
@@ -512,12 +512,12 @@ namespace AiUsageWebView2
                 }
 
                 int contentTop = y + Math.Max(42, (int)Math.Ceiling(settings.PercentFontSize + 22));
-                int contentBottom = y + h - 18;
+                int contentBottom = y + h - 12;
                 int rowHeight = Math.Max(30, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 12)));
-                int rowGap = Math.Max(rowHeight + 8, Math.Min(92, (contentBottom - contentTop - rowHeight) / 2));
-                int groupHeight = rowGap + rowHeight;
-                int firstY = contentTop + Math.Max(0, (contentBottom - contentTop - groupHeight) / 2);
-                int secondY = firstY + rowGap;
+                int usable = Math.Max(rowHeight * 2 + 8, contentBottom - contentTop);
+                int rowGap = Math.Max(rowHeight + 8, usable - rowHeight);
+                int firstY = contentTop;
+                int secondY = Math.Min(contentBottom - rowHeight, firstY + rowGap);
                 DrawRow(g, "5時間", state.Data.FiveHourDisplayPercent(showUsed), showUsed, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
                 DrawRow(g, "週", state.Data.WeeklyDisplayPercent(showUsed), showUsed, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
@@ -698,37 +698,6 @@ namespace AiUsageWebView2
                 g.FillPath(b, p);
         }
 
-        void DrawPinIcon(Graphics g, Rectangle r, Color color)
-        {
-            using (var pen = new Pen(color, 1.7f))
-            {
-                g.DrawLine(pen, r.X + 9, r.Y + 3, r.X + 14, r.Y + 8);
-                g.DrawLine(pen, r.X + 12, r.Y + 6, r.X + 7, r.Y + 11);
-                g.DrawLine(pen, r.X + 5, r.Y + 9, r.X + 9, r.Y + 13);
-                g.DrawLine(pen, r.X + 8, r.Y + 12, r.X + 4, r.Y + 16);
-            }
-        }
-
-        void DrawGearIcon(Graphics g, Rectangle r, Color color)
-        {
-            int cx = r.X + r.Width / 2;
-            int cy = r.Y + r.Height / 2;
-            using (var pen = new Pen(color, 1.6f))
-            {
-                g.DrawEllipse(pen, cx - 5, cy - 5, 10, 10);
-                g.DrawEllipse(pen, cx - 2, cy - 2, 4, 4);
-                for (int i = 0; i < 8; i++)
-                {
-                    double a = i * Math.PI / 4.0;
-                    int x1 = cx + (int)Math.Round(Math.Cos(a) * 7);
-                    int y1 = cy + (int)Math.Round(Math.Sin(a) * 7);
-                    int x2 = cx + (int)Math.Round(Math.Cos(a) * 10);
-                    int y2 = cy + (int)Math.Round(Math.Sin(a) * 10);
-                    g.DrawLine(pen, x1, y1, x2, y2);
-                }
-            }
-        }
-
         static void DrawBar(Graphics g, int x, int y, int w, int h, int? pct, Color accent)
         {
             using (var bg = new SolidBrush(Color.FromArgb(44, 44, 44)))
@@ -744,12 +713,13 @@ namespace AiUsageWebView2
 
         void DrawResizeGrip(Graphics g)
         {
-            using (var pen = new Pen(Color.FromArgb(96, 96, 96)))
+            using (var pen = new Pen(Color.FromArgb(120, 120, 120), 1.2f))
             {
-                int right = ClientSize.Width - 5;
-                int bottom = ClientSize.Height - 5;
-                g.DrawLine(pen, right - 10, bottom, right, bottom - 10);
-                g.DrawLine(pen, right - 5, bottom, right, bottom - 5);
+                int right = ClientSize.Width - 4;
+                int bottom = ClientSize.Height - 4;
+                g.DrawLine(pen, right - 13, bottom, right, bottom - 13);
+                g.DrawLine(pen, right - 8, bottom, right, bottom - 8);
+                g.DrawLine(pen, right - 3, bottom, right, bottom - 3);
             }
         }
 
