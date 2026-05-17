@@ -82,12 +82,10 @@ namespace AiUsageWebView2
             };
             KeyDown += async (s, e) =>
             {
-                if (e.KeyCode == Keys.Escape) Close();
                 if (e.KeyCode == Keys.F5) await RefreshAllAsync(true);
-                if (e.KeyCode == Keys.F4) ShowSettingsDialog();
             };
 
-            paintTimer.Interval = 1000;
+            paintTimer.Interval = 250;
             paintTimer.Tick += (s, e) =>
             {
                 spinnerFrame = (spinnerFrame + 1) % 4;
@@ -203,7 +201,7 @@ namespace AiUsageWebView2
                 tcs.TrySetResult(true);
             };
             view.CoreWebView2.NavigationCompleted += handler;
-            view.CoreWebView2.Navigate(url);
+            view.CoreWebView2.Navigate(WithCacheBuster(url));
             await Task.WhenAny(tcs.Task, Task.Delay(30000));
 
             string previous = "";
@@ -216,6 +214,19 @@ namespace AiUsageWebView2
                 previous = current;
             }
             return current;
+        }
+
+        static string WithCacheBuster(string url)
+        {
+            string hash = "";
+            int hashIndex = url.IndexOf('#');
+            if (hashIndex >= 0)
+            {
+                hash = url.Substring(hashIndex);
+                url = url.Substring(0, hashIndex);
+            }
+            string sep = url.Contains("?") ? "&" : "?";
+            return url + sep + "_ai_usage_refresh=" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + hash;
         }
 
         async Task<string> GetBodyTextAsync(WebView2 view)
@@ -369,6 +380,11 @@ namespace AiUsageWebView2
                 ShowSettingsDialog();
                 return;
             }
+            if (key == "close")
+            {
+                Close();
+                return;
+            }
 
             ServiceState service = key.StartsWith("codex") ? codex : claude;
             WebView2 view = service == codex ? codexView : claudeView;
@@ -444,11 +460,14 @@ namespace AiUsageWebView2
         void DrawSideRail(Graphics g)
         {
             int x = ClientSize.Width - 22;
-            int pinY = 12;
-            int settingsY = 44;
+            int closeY = 10;
+            int pinY = 42;
+            int settingsY = 74;
+            hits["close"] = new Rectangle(x - 4, closeY - 4, 24, 24);
             hits["pin"] = new Rectangle(x - 4, pinY - 4, 24, 24);
             hits["settings"] = new Rectangle(x - 4, settingsY - 4, 24, 24);
 
+            DrawIconButton(g, "close", x, closeY, Color.FromArgb(170, 170, 170), DrawCloseIcon);
             DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), DrawPinIcon);
             DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(150, 150, 150), DrawGearIcon);
         }
@@ -498,7 +517,15 @@ namespace AiUsageWebView2
                 if (stale)
                     DrawBadge(g, "古い", x + 93, y + 16, Color.FromArgb(130, 92, 25));
                 if (exhausted)
+                {
                     DrawBadge(g, "上限", x + 93, y + 16, Color.FromArgb(116, 42, 42));
+                    string limitReset = LimitResetText(state.Data, fiveRemain, weekRemain);
+                    if (limitReset.Length > 0)
+                    {
+                        using (var badgeText = new Font("Yu Gothic UI", 8.8f, FontStyle.Regular))
+                            g.DrawString(limitReset, badgeText, dim, x + 132, y + 16);
+                    }
+                }
                 DrawCardControls(g, state, x, y, w, keyPrefix);
 
                 if (!state.Data.HasAnyValue())
@@ -548,6 +575,15 @@ namespace AiUsageWebView2
             DrawRefreshIcon(g, refreshX, controlY, keyPrefix + "-refresh", state.IsRefreshing);
         }
 
+        static string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain)
+        {
+            string raw = "";
+            if (fiveRemain.HasValue && fiveRemain.Value <= 0) raw = data.FiveHourReset;
+            else if (weekRemain.HasValue && weekRemain.Value <= 0) raw = data.WeeklyReset;
+            string text = ResetText(raw);
+            return text.Replace("リセットまで ", "あと ");
+        }
+
         string BoostText(ServiceState state)
         {
             if (!state.BoostUntil.HasValue || state.BoostUntil.Value <= DateTime.Now) return "";
@@ -579,8 +615,6 @@ namespace AiUsageWebView2
             string reset = ResetText(resetText);
             if (!string.IsNullOrEmpty(reset))
                 g.DrawString(reset, resetFont, dim, barX, y + Math.Max(16, (int)Math.Round(settings.PercentFontSize * 0.95)));
-            if (limit)
-                g.DrawString(showUsed ? "高負荷" : "残少", labelFont, Brushes.IndianRed, percentX, y + Math.Max(20, (int)Math.Round(settings.PercentFontSize * 1.05)));
             }
         }
 
@@ -599,19 +633,68 @@ namespace AiUsageWebView2
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             var lower = raw.ToLowerInvariant();
-            if (raw.Contains("リセットまで")) return raw;
-            if (raw.Contains("後にリセット"))
+            string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
+            if (cleaned.Contains("リセットまで")) return cleaned;
+            var relative = RelativeResetText(cleaned);
+            if (!string.IsNullOrEmpty(relative)) return relative;
+
+            DateTime target;
+            if (TryParseResetTarget(cleaned, out target))
+                return "リセットまで " + FormatDuration(target - DateTime.Now);
+
+            if (cleaned.Contains("後にリセット"))
             {
-                var s = raw.Replace("後にリセット", "").Replace("リセット", "").Trim();
+                var s = cleaned.Replace("後にリセット", "").Replace("リセット", "").Trim();
                 return "リセットまで " + s;
             }
             if (lower.Contains("reset"))
             {
-                var m = Regex.Match(raw, @"(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})");
+                var m = Regex.Match(cleaned, @"(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2})");
                 if (m.Success) return "リセット " + m.Groups[1].Value;
-                return raw;
+                return cleaned;
             }
-            return "リセット " + raw;
+            return "リセット " + cleaned;
+        }
+
+        static string RelativeResetText(string text)
+        {
+            var m = Regex.Match(text, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
+            if (!m.Success) return "";
+            int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
+            int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
+            return "リセットまで " + FormatDuration(new TimeSpan(hours, minutes, 0));
+        }
+
+        static bool TryParseResetTarget(string text, out DateTime target)
+        {
+            target = DateTime.MinValue;
+            var dateTime = Regex.Match(text, @"(?:(\d{4})/)?(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})");
+            if (dateTime.Success)
+            {
+                int year = dateTime.Groups[1].Success ? int.Parse(dateTime.Groups[1].Value) : DateTime.Now.Year;
+                target = new DateTime(year, int.Parse(dateTime.Groups[2].Value), int.Parse(dateTime.Groups[3].Value), int.Parse(dateTime.Groups[4].Value), int.Parse(dateTime.Groups[5].Value), 0);
+                return true;
+            }
+
+            var time = Regex.Match(text, @"^(\d{1,2}):(\d{2})$");
+            if (time.Success)
+            {
+                var now = DateTime.Now;
+                target = new DateTime(now.Year, now.Month, now.Day, int.Parse(time.Groups[1].Value), int.Parse(time.Groups[2].Value), 0);
+                if (target < now.AddMinutes(-1)) target = target.AddDays(1);
+                return true;
+            }
+            return false;
+        }
+
+        static string FormatDuration(TimeSpan span)
+        {
+            if (span.TotalSeconds <= 0) return "0分";
+            int totalMinutes = Math.Max(0, (int)Math.Ceiling(span.TotalMinutes));
+            int hours = totalMinutes / 60;
+            int minutes = totalMinutes % 60;
+            if (hours > 0) return hours + "時間" + minutes + "分";
+            return minutes + "分";
         }
 
         void DrawLoginButton(Graphics g, int x, int y, string key)
@@ -666,9 +749,9 @@ namespace AiUsageWebView2
         void DrawRefreshIcon(Graphics g, int x, int y, string key, bool active)
         {
             var r = new Rectangle(x - 2, y - 2, 24, 24);
-            if (hoverKey == key || active)
+            if (hoverKey == key && !active)
             {
-                using (var bg = new SolidBrush(active ? Color.FromArgb(54, 54, 56) : Color.FromArgb(42, 42, 44)))
+                using (var bg = new SolidBrush(Color.FromArgb(42, 42, 44)))
                 using (var path = RoundRect(r.X, r.Y, r.Width, r.Height, 12))
                     g.FillPath(bg, path);
             }
@@ -692,6 +775,15 @@ namespace AiUsageWebView2
             using (var b = new SolidBrush(Color.WhiteSmoke))
             using (var p = RoundRect(knobX, y + 2, knob, knob, knob / 2))
                 g.FillPath(b, p);
+        }
+
+        void DrawCloseIcon(Graphics g, Rectangle r, Color color)
+        {
+            using (var pen = new Pen(color, 1.8f))
+            {
+                g.DrawLine(pen, r.X + 5, r.Y + 5, r.X + 15, r.Y + 15);
+                g.DrawLine(pen, r.X + 15, r.Y + 5, r.X + 5, r.Y + 15);
+            }
         }
 
         void DrawPinIcon(Graphics g, Rectangle r, Color color)
@@ -819,7 +911,7 @@ namespace AiUsageWebView2
             this.original = settings.Clone();
             this.preview = preview;
             Text = "設定";
-            Width = 390;
+            Width = 430;
             Height = 500;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -838,8 +930,8 @@ namespace AiUsageWebView2
             AddNumber("リセット文字", resetSize, (int)Math.Round(settings.ResetFontSize), 18, 312, 6, 32);
             AddNumber("黄色しきい値（残量%）", warningPercent, settings.WarningRemainingPercent, 18, 354, 1, 99);
             AddNumber("赤しきい値（残量%）", criticalPercent, settings.CriticalRemainingPercent, 18, 396, 1, 99);
-            AddText("黄色", warningColor, settings.WarningColor, 266, 354);
-            AddText("赤", criticalColor, settings.CriticalColor, 266, 396);
+            AddText("黄色", warningColor, settings.WarningColor, 270, 354);
+            AddText("赤", criticalColor, settings.CriticalColor, 270, 396);
 
             topMost.Text = "常に最前面に固定";
             topMost.Checked = settings.AlwaysOnTop;
@@ -847,8 +939,8 @@ namespace AiUsageWebView2
             topMost.Width = 180;
             Controls.Add(topMost);
 
-            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(202, 430), Width = 72 };
-            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(284, 430), Width = 82 };
+            var ok = new Button { Text = "保存", DialogResult = DialogResult.OK, Location = new Point(242, 430), Width = 72 };
+            var cancel = new Button { Text = "キャンセル", DialogResult = DialogResult.Cancel, Location = new Point(324, 430), Width = 82 };
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
