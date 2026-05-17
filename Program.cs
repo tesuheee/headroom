@@ -449,11 +449,13 @@ namespace AiUsageWebView2
             hits["pin"] = new Rectangle(x - 4, pinY - 4, 24, 24);
             hits["settings"] = new Rectangle(x - 4, settingsY - 4, 24, 24);
 
-            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), "\uE718");
-            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(150, 150, 150), "\uE713");
+            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), DrawPinIcon);
+            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(150, 150, 150), DrawGearIcon);
         }
 
-        void DrawIconButton(Graphics g, string key, int x, int y, Color color, string glyph)
+        delegate void IconPainter(Graphics g, Rectangle r, Color color);
+
+        void DrawIconButton(Graphics g, string key, int x, int y, Color color, IconPainter painter)
         {
             var r = new Rectangle(x - 1, y - 1, 20, 20);
             if (hoverKey == key)
@@ -462,9 +464,7 @@ namespace AiUsageWebView2
                 using (var path = RoundRect(r.X - 2, r.Y - 2, r.Width + 4, r.Height + 4, 10))
                     g.FillPath(bg, path);
             }
-            using (var f = new Font("Segoe MDL2 Assets", 12.5f, FontStyle.Regular))
-            using (var b = new SolidBrush(color))
-                g.DrawString(glyph, f, b, r.X + 1, r.Y + 1);
+            painter(g, r, color);
         }
 
         void DrawService(Graphics g, ServiceState state, int x, int y, int w, int h, string keyPrefix)
@@ -514,10 +514,11 @@ namespace AiUsageWebView2
                 int contentTop = y + Math.Max(42, (int)Math.Ceiling(settings.PercentFontSize + 22));
                 int contentBottom = y + h - 12;
                 int rowHeight = Math.Max(30, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 12)));
-                int usable = Math.Max(rowHeight * 2 + 8, contentBottom - contentTop);
-                int rowGap = Math.Max(rowHeight + 8, usable - rowHeight);
-                int firstY = contentTop;
-                int secondY = Math.Min(contentBottom - rowHeight, firstY + rowGap);
+                int usable = Math.Max(rowHeight * 2, contentBottom - contentTop);
+                int free = usable - rowHeight * 2;
+                int gapY = Math.Max(4, free / 3);
+                int firstY = contentTop + gapY;
+                int secondY = firstY + rowHeight + gapY;
                 DrawRow(g, "5時間", state.Data.FiveHourDisplayPercent(showUsed), showUsed, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
                 DrawRow(g, "週", state.Data.WeeklyDisplayPercent(showUsed), showUsed, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
@@ -696,6 +697,44 @@ namespace AiUsageWebView2
             using (var b = new SolidBrush(Color.WhiteSmoke))
             using (var p = RoundRect(knobX, y + 2, knob, knob, knob / 2))
                 g.FillPath(b, p);
+        }
+
+        void DrawPinIcon(Graphics g, Rectangle r, Color color)
+        {
+            using (var brush = new SolidBrush(color))
+            using (var pen = new Pen(color, 1.5f))
+            {
+                var head = new Point[]
+                {
+                    new Point(r.X + 7, r.Y + 3),
+                    new Point(r.X + 15, r.Y + 7),
+                    new Point(r.X + 11, r.Y + 11),
+                    new Point(r.X + 4, r.Y + 7)
+                };
+                g.FillPolygon(brush, head);
+                g.DrawLine(pen, r.X + 10, r.Y + 10, r.X + 5, r.Y + 17);
+                g.DrawLine(pen, r.X + 8, r.Y + 14, r.X + 12, r.Y + 18);
+            }
+        }
+
+        void DrawGearIcon(Graphics g, Rectangle r, Color color)
+        {
+            int cx = r.X + r.Width / 2;
+            int cy = r.Y + r.Height / 2;
+            using (var pen = new Pen(color, 1.4f))
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    double a = i * Math.PI / 4.0;
+                    int x1 = cx + (int)Math.Round(Math.Cos(a) * 6);
+                    int y1 = cy + (int)Math.Round(Math.Sin(a) * 6);
+                    int x2 = cx + (int)Math.Round(Math.Cos(a) * 9);
+                    int y2 = cy + (int)Math.Round(Math.Sin(a) * 9);
+                    g.DrawLine(pen, x1, y1, x2, y2);
+                }
+                g.DrawEllipse(pen, cx - 6, cy - 6, 12, 12);
+                g.DrawEllipse(pen, cx - 2, cy - 2, 4, 4);
+            }
         }
 
         static void DrawBar(Graphics g, int x, int y, int w, int h, int? pct, Color accent)
