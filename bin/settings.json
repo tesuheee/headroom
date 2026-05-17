@@ -1,9 +1,9 @@
 {
-  "width": 680,
+  "width": 700,
   "height": 170,
   "language": "ja",
-  "normalIntervalMinutes": 15,
-  "boostDurationMinutes": 15,
+  "normalIntervalMinutes": 5,
+  "boostDurationMinutes": 30,
   "boostIntervalMinutes": 1,
   "finalRefreshWindowMinutes": 15,
   "finalRefreshIntervalMinutes": 1,
@@ -13,8 +13,8 @@
   "labelFontSize": 11,
   "percentFontSize": 14,
   "resetFontSize": 10,
-  "warningRemainingPercent": 30,
-  "criticalRemainingPercent": 15,
+  "warningRemainingPercent": 50,
+  "criticalRemainingPercent": 30,
   "warningColor": "#E8A924",
   "criticalColor": "#E04949"
 }

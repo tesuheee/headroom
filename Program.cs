@@ -481,33 +481,34 @@ namespace AiUsageWebView2
             base.OnPaint(e);
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             g.Clear(Color.Black);
             hits.Clear();
 
-            int y = 6;
+            int y = 8;
             int gap = 10;
-            int sideRail = 14;
-            int cardW = Math.Max(240, (ClientSize.Width - sideRail - 22 - gap) / 2);
-            int cardH = ClientSize.Height - y - 5;
-            DrawService(g, codex, 8, y, cardW, cardH, "codex");
-            DrawService(g, claude, 18 + cardW, y, cardW, cardH, "claude");
+            int sideRail = 16;
+            int cardW = Math.Max(240, (ClientSize.Width - sideRail - 26 - gap) / 2);
+            int cardH = ClientSize.Height - y - 8;
+            DrawService(g, codex, 10, y, cardW, cardH, "codex");
+            DrawService(g, claude, 20 + cardW, y, cardW, cardH, "claude");
             DrawSideRail(g);
             DrawResizeGrip(g);
         }
 
         void DrawSideRail(Graphics g)
         {
-            int x = ClientSize.Width - 22;
-            int closeY = 10;
-            int pinY = 42;
-            int settingsY = 74;
-            hits["close"] = new Rectangle(x - 4, closeY - 4, 24, 24);
-            hits["pin"] = new Rectangle(x - 4, pinY - 4, 24, 24);
-            hits["settings"] = new Rectangle(x - 4, settingsY - 4, 24, 24);
+            int x = ClientSize.Width - 24;
+            int closeY = 12;
+            int pinY = 46;
+            int settingsY = 80;
+            hits["close"] = new Rectangle(x - 6, closeY - 6, 28, 28);
+            hits["pin"] = new Rectangle(x - 6, pinY - 6, 28, 28);
+            hits["settings"] = new Rectangle(x - 6, settingsY - 6, 28, 28);
 
-            DrawIconButton(g, "close", x, closeY, Color.FromArgb(170, 170, 170), DrawCloseIcon);
-            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(245, 245, 245) : Color.FromArgb(125, 125, 125), DrawPinIcon);
-            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(150, 150, 150), DrawGearIcon);
+            DrawIconButton(g, "close", x, closeY, Color.FromArgb(160, 160, 165), DrawCloseIcon);
+            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(130, 130, 135), DrawGearIcon);
         }
 
         delegate void IconPainter(Graphics g, Rectangle r, Color color);
@@ -517,9 +518,10 @@ namespace AiUsageWebView2
             var r = new Rectangle(x - 1, y - 1, 20, 20);
             if (hoverKey == key)
             {
-                using (var bg = new SolidBrush(Color.FromArgb(44, 44, 46)))
-                using (var path = RoundRect(r.X - 2, r.Y - 2, r.Width + 4, r.Height + 4, 10))
+                using (var bg = new SolidBrush(Color.FromArgb(50, 50, 54)))
+                using (var path = RoundRect(r.X - 4, r.Y - 4, r.Width + 8, r.Height + 8, 12))
                     g.FillPath(bg, path);
+                color = Color.FromArgb(Math.Min(255, color.R + 40), Math.Min(255, color.G + 40), Math.Min(255, color.B + 40));
             }
             painter(g, r, color);
         }
@@ -532,36 +534,48 @@ namespace AiUsageWebView2
             bool exhausted = (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
             bool stale = state.LastRefresh != DateTime.MinValue &&
                 DateTime.Now - state.LastRefresh > TimeSpan.FromMinutes(Math.Max(2, settings.NormalIntervalMinutes * 2));
-            Color cardColor = exhausted ? Color.FromArgb(38, 24, 24) : (stale ? Color.FromArgb(34, 31, 23) : Color.FromArgb(28, 28, 30));
             Color accent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
 
-            using (var bg = new SolidBrush(cardColor))
-            using (var border = new Pen(exhausted ? Color.FromArgb(100, 45, 45) : (stale ? Color.FromArgb(115, 92, 38) : Color.FromArgb(38, 38, 40))))
-            using (var path = RoundRect(x, y, w, h, 8))
+            // Card with gradient background
+            using (var path = RoundRect(x, y, w, h, 12))
             {
-                g.FillPath(bg, path);
-                g.DrawPath(border, path);
-            }
+                Color topColor = exhausted ? Color.FromArgb(42, 22, 22) : (stale ? Color.FromArgb(38, 34, 22) : Color.FromArgb(30, 30, 34));
+                Color bottomColor = exhausted ? Color.FromArgb(32, 18, 18) : (stale ? Color.FromArgb(30, 28, 18) : Color.FromArgb(22, 22, 26));
+                using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(x, y, w, h), topColor, bottomColor, 90f))
+                    g.FillPath(grad, path);
 
-            using (var title = new Font("Yu Gothic UI", 13.5f, FontStyle.Bold))
-            using (var label = new Font("Yu Gothic UI", settings.LabelFontSize, FontStyle.Regular))
-            using (var reset = new Font("Yu Gothic UI", settings.ResetFontSize, FontStyle.Regular))
+                // Subtle top highlight
+                using (var highlight = new Pen(Color.FromArgb(exhausted ? 18 : 28, 255, 255, 255)))
+                    g.DrawPath(highlight, path);
+            }
+            // Border
+            using (var path = RoundRect(x, y, w, h, 12))
+            using (var border = new Pen(exhausted ? Color.FromArgb(80, 40, 40) : (stale ? Color.FromArgb(80, 68, 30) : Color.FromArgb(48, 48, 54)), 0.8f))
+                g.DrawPath(border, path);
+
+            // Accent indicator dot
+            using (var dotBrush = new SolidBrush(accent))
+                g.FillEllipse(dotBrush, x + 16, y + 17, 8, 8);
+
+            using (var title = new Font("Segoe UI", 13f, FontStyle.Bold))
+            using (var label = new Font("Segoe UI", settings.LabelFontSize, FontStyle.Regular))
+            using (var reset = new Font("Segoe UI", settings.ResetFontSize, FontStyle.Regular))
             using (var num = new Font("Segoe UI", settings.PercentFontSize, FontStyle.Bold))
-            using (var white = new SolidBrush(Color.FromArgb(248, 248, 248)))
-            using (var muted = new SolidBrush(Color.FromArgb(205, 205, 205)))
-            using (var dim = new SolidBrush(Color.FromArgb(205, 205, 205)))
+            using (var white = new SolidBrush(Color.FromArgb(240, 242, 245)))
+            using (var muted = new SolidBrush(Color.FromArgb(170, 175, 185)))
+            using (var dim = new SolidBrush(Color.FromArgb(140, 145, 155)))
             {
-                g.DrawString(state.Name, title, white, x + 18, y + 11);
+                g.DrawString(state.Name, title, white, x + 30, y + 10);
                 if (stale)
-                    DrawBadge(g, T("古い", "Stale"), x + 93, y + 16, Color.FromArgb(130, 92, 25));
+                    DrawBadge(g, T("古い", "Stale"), x + 100, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50));
                 if (exhausted)
                 {
-                    DrawBadge(g, T("上限", "Limit"), x + 93, y + 16, Color.FromArgb(116, 42, 42));
+                    DrawBadge(g, T("上限", "Limit"), x + 100, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100));
                     string limitReset = LimitResetText(state.Data, fiveRemain, weekRemain, English);
                     if (limitReset.Length > 0)
                     {
-                        using (var badgeText = new Font("Yu Gothic UI", 8.8f, FontStyle.Regular))
-                            g.DrawString(limitReset, badgeText, dim, x + 132, y + 16);
+                        using (var badgeText = new Font("Segoe UI", 8.5f, FontStyle.Regular))
+                            g.DrawString(limitReset, badgeText, dim, x + 140, y + 16);
                     }
                 }
                 DrawCardControls(g, state, x, y, w, keyPrefix);
@@ -571,16 +585,16 @@ namespace AiUsageWebView2
                     g.DrawString("--", num, white, x + 58, y + 54);
                     string status = state.IsRefreshing ? T("更新中", "Updating") : StatusText(state.Status ?? state.Data.Status ?? "no_data");
                     g.DrawString(status, label, muted, x + 20, y + 88);
-                    DrawLoginButton(g, x + w - 96, y + h - 38, keyPrefix + "-login");
+                    DrawLoginButton(g, x + w - 100, y + h - 40, keyPrefix + "-login");
                     return;
                 }
 
-                int contentTop = y + Math.Max(42, (int)Math.Ceiling(settings.PercentFontSize + 22));
-                int contentBottom = y + h - 12;
-                int rowHeight = Math.Max(30, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 12)));
+                int contentTop = y + Math.Max(44, (int)Math.Ceiling(settings.PercentFontSize + 24));
+                int contentBottom = y + h - 14;
+                int rowHeight = Math.Max(32, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 14)));
                 int usable = Math.Max(rowHeight * 2, contentBottom - contentTop);
                 int free = usable - rowHeight * 2;
-                int gapY = Math.Max(4, free / 3);
+                int gapY = Math.Max(6, free / 3);
                 int firstY = contentTop + gapY;
                 int secondY = firstY + rowHeight + gapY;
                 DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
@@ -590,20 +604,20 @@ namespace AiUsageWebView2
 
         void DrawCardControls(Graphics g, ServiceState state, int x, int y, int w, string keyPrefix)
         {
-            int refreshX = x + w - 32;
-            int controlY = y + 13;
-            int toggleW = 31;
+            int refreshX = x + w - 34;
+            int controlY = y + 12;
+            int toggleW = 32;
             int toggleH = 17;
-            int toggleX = refreshX - toggleW - 11;
+            int toggleX = refreshX - toggleW - 12;
             var boostText = BoostText(state);
-            int boostTextW = boostText.Length > 0 ? 50 : 0;
+            int boostTextW = boostText.Length > 0 ? 52 : 0;
             int boostTextX = toggleX - boostTextW - 6;
 
             hits[keyPrefix + "-refresh"] = new Rectangle(refreshX - 4, controlY - 3, 30, 28);
             hits[keyPrefix + "-boost"] = new Rectangle(toggleX - 3, controlY + 1, toggleW + 6, toggleH + 6);
 
-            using (var small = new Font("Yu Gothic UI", 8.8f, FontStyle.Regular))
-            using (var textBrush = new SolidBrush(Color.FromArgb(218, 218, 218)))
+            using (var small = new Font("Segoe UI", 8.5f, FontStyle.Regular))
+            using (var textBrush = new SolidBrush(Color.FromArgb(140, 150, 165)))
             {
                 if (boostText.Length > 0)
                     g.DrawString(boostText, small, textBrush, boostTextX, controlY + 3);
@@ -676,27 +690,29 @@ namespace AiUsageWebView2
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
+            bool warning = pct.HasValue && !limit && (showUsed ? 100 - pct.Value : pct.Value) <= settings.WarningRemainingPercent;
             Color rowColor = RowColor(pct, showUsed, accent);
-            using (var pctBrush = new SolidBrush(limit ? Color.FromArgb(255, 145, 145) : Color.FromArgb(248, 248, 248)))
+            Color numColor = limit ? Color.FromArgb(255, 130, 130) : (warning ? Color.FromArgb(245, 200, 100) : Color.FromArgb(240, 242, 248));
+            using (var pctBrush = new SolidBrush(numColor))
             {
             int labelX = x + 18;
-            int modeX = labelX + Math.Max(34, (int)Math.Ceiling(g.MeasureString("5時間", labelFont).Width)) + 7;
+            int modeX = labelX + Math.Max(36, (int)Math.Ceiling(g.MeasureString("5時間", labelFont).Width)) + 8;
             string modeText = showUsed ? T("使用", "Used") : T("残り", "Left");
-            int percentX = modeX + Math.Max(30, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 7;
+            int percentX = modeX + Math.Max(32, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 8;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
-            g.DrawString(modeText, labelFont, muted, modeX, labelY);
+            g.DrawString(modeText, labelFont, dim, modeX, labelY);
             g.DrawString(empty ? "--" : pct.Value + "%", numFont, pctBrush, percentX, y - 4);
 
-            int pctWidth = Math.Max(42, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
-            int barX = percentX + pctWidth + 8;
-            int barY = y + Math.Max(5, (int)Math.Round(settings.PercentFontSize * 0.45));
-            int barW = Math.Max(70, w - (barX - x) - 17);
-            DrawBar(g, barX, barY, barW, 7, pct, rowColor);
+            int pctWidth = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
+            int barX = percentX + pctWidth + 10;
+            int barY = y + Math.Max(5, (int)Math.Round(settings.PercentFontSize * 0.42));
+            int barW = Math.Max(70, w - (barX - x) - 18);
+            DrawBar(g, barX, barY, barW, 9, pct, rowColor);
 
             string reset = ResetText(resetText, weekly, English);
             if (!string.IsNullOrEmpty(reset))
-                g.DrawString(reset, resetFont, dim, barX, y + Math.Max(16, (int)Math.Round(settings.PercentFontSize * 0.95)));
+                g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
             }
         }
 
@@ -812,25 +828,36 @@ namespace AiUsageWebView2
 
         void DrawLoginButton(Graphics g, int x, int y, string key)
         {
-            int buttonW = English ? 82 : 76;
-            hits[key] = new Rectangle(x, y, buttonW, 25);
-            Color bg = hoverKey == key ? Color.FromArgb(64, 64, 66) : Color.FromArgb(46, 46, 48);
-            using (var b = new SolidBrush(bg))
-            using (var p = RoundRect(x, y, buttonW, 25, 8))
-                g.FillPath(b, p);
-            using (var f = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold))
-            using (var white = new SolidBrush(Color.WhiteSmoke))
-                g.DrawString(T("ログイン", "Login"), f, white, x + 13, y + 3);
+            int buttonW = English ? 86 : 80;
+            int buttonH = 28;
+            hits[key] = new Rectangle(x, y, buttonW, buttonH);
+            bool hover = hoverKey == key;
+            using (var p = RoundRect(x, y, buttonW, buttonH, 10))
+            {
+                Color top = hover ? Color.FromArgb(72, 72, 78) : Color.FromArgb(52, 52, 58);
+                Color bottom = hover ? Color.FromArgb(58, 58, 64) : Color.FromArgb(40, 40, 46);
+                using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(x, y, buttonW, buttonH), top, bottom, 90f))
+                    g.FillPath(grad, p);
+                using (var border = new Pen(Color.FromArgb(hover ? 90 : 65, 90, 100), 0.8f))
+                    g.DrawPath(border, p);
+            }
+            using (var f = new Font("Segoe UI", 9.2f, FontStyle.Bold))
+            using (var white = new SolidBrush(Color.FromArgb(235, 238, 242)))
+                g.DrawString(T("ログイン", "Login"), f, white, x + 14, y + 5);
         }
 
-        void DrawBadge(Graphics g, string text, int x, int y, Color color)
+        void DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
         {
-            using (var bg = new SolidBrush(color))
-            using (var path = RoundRect(x, y, 34, 18, 9))
-                g.FillPath(bg, path);
-            using (var f = new Font("Yu Gothic UI", 8.5f, FontStyle.Bold))
-            using (var b = new SolidBrush(Color.WhiteSmoke))
-                g.DrawString(text, f, b, x + 6, y + 1);
+            using (var path = RoundRect(x, y, 38, 20, 10))
+            {
+                using (var bg = new SolidBrush(bgColor))
+                    g.FillPath(bg, path);
+                using (var border = new Pen(Color.FromArgb(40, textColor.R, textColor.G, textColor.B), 0.6f))
+                    g.DrawPath(border, path);
+            }
+            using (var f = new Font("Segoe UI", 8.2f, FontStyle.Bold))
+            using (var b = new SolidBrush(textColor))
+                g.DrawString(text, f, b, x + 7, y + 3);
         }
 
         void DrawServiceMark(Graphics g, string name, int x, int y, Color accent)
@@ -865,56 +892,72 @@ namespace AiUsageWebView2
             var r = new Rectangle(x - 2, y - 2, 24, 24);
             if (hoverKey == key && !active)
             {
-                using (var bg = new SolidBrush(Color.FromArgb(42, 42, 44)))
-                using (var path = RoundRect(r.X, r.Y, r.Width, r.Height, 12))
+                using (var bg = new SolidBrush(Color.FromArgb(48, 48, 54)))
+                using (var path = RoundRect(r.X - 1, r.Y - 1, r.Width + 2, r.Height + 2, 12))
                     g.FillPath(bg, path);
             }
 
             string[] frames = { "◜", "◝", "◞", "◟" };
             string s = active ? frames[spinnerFrame] : "↻";
+            Color iconColor = active ? Color.FromArgb(100, 180, 255) : Color.FromArgb(200, 205, 212);
             using (var f = new Font("Segoe UI Symbol", active ? 13f : 12.5f, FontStyle.Regular))
-            using (var b = new SolidBrush(Color.FromArgb(238, 238, 238)))
+            using (var b = new SolidBrush(iconColor))
                 g.DrawString(s, f, b, x + (active ? 2 : 1), y + (active ? 0 : -1));
         }
 
         void DrawToggle(Graphics g, int x, int y, int w, int h, bool on, bool hover)
         {
-            Color bg = on ? Color.FromArgb(45, 132, 235) : Color.FromArgb(62, 62, 64);
-            if (hover && !on) bg = Color.FromArgb(78, 78, 80);
-            using (var b = new SolidBrush(bg))
             using (var p = RoundRect(x, y, w, h, h / 2))
-                g.FillPath(b, p);
+            {
+                if (on)
+                {
+                    Color left = Color.FromArgb(40, 120, 220);
+                    Color right = Color.FromArgb(60, 150, 255);
+                    using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(x, y, w, h), left, right, 0f))
+                        g.FillPath(grad, p);
+                }
+                else
+                {
+                    Color bg = hover ? Color.FromArgb(72, 72, 76) : Color.FromArgb(52, 52, 56);
+                    using (var b = new SolidBrush(bg))
+                        g.FillPath(b, p);
+                }
+                using (var border = new Pen(Color.FromArgb(on ? 40 : 25, 255, 255, 255), 0.5f))
+                    g.DrawPath(border, p);
+            }
             int knob = h - 5;
             int knobX = on ? x + w - knob - 3 : x + 3;
-            using (var b = new SolidBrush(Color.WhiteSmoke))
-            using (var p = RoundRect(knobX, y + 2, knob, knob, knob / 2))
-                g.FillPath(b, p);
+            using (var knobPath = RoundRect(knobX, y + 2, knob, knob, knob / 2))
+            {
+                using (var shadow = new SolidBrush(Color.FromArgb(30, 0, 0, 0)))
+                    g.FillEllipse(shadow, knobX + 1, y + 3, knob, knob);
+                using (var b = new SolidBrush(Color.FromArgb(245, 248, 252)))
+                    g.FillPath(b, knobPath);
+            }
         }
 
         void DrawCloseIcon(Graphics g, Rectangle r, Color color)
         {
-            using (var pen = new Pen(color, 1.8f))
+            using (var pen = new Pen(color, 1.6f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
             {
-                g.DrawLine(pen, r.X + 5, r.Y + 5, r.X + 15, r.Y + 15);
-                g.DrawLine(pen, r.X + 15, r.Y + 5, r.X + 5, r.Y + 15);
+                g.DrawLine(pen, r.X + 6, r.Y + 6, r.X + 14, r.Y + 14);
+                g.DrawLine(pen, r.X + 14, r.Y + 6, r.X + 6, r.Y + 14);
             }
         }
 
         void DrawPinIcon(Graphics g, Rectangle r, Color color)
         {
-            using (var brush = new SolidBrush(color))
-            using (var pen = new Pen(color, 1.5f))
+            using (var pen = new Pen(color, 1.6f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
             {
-                var head = new Point[]
-                {
-                    new Point(r.X + 7, r.Y + 3),
-                    new Point(r.X + 15, r.Y + 7),
-                    new Point(r.X + 11, r.Y + 11),
-                    new Point(r.X + 4, r.Y + 7)
-                };
-                g.FillPolygon(brush, head);
-                g.DrawLine(pen, r.X + 10, r.Y + 10, r.X + 5, r.Y + 17);
-                g.DrawLine(pen, r.X + 8, r.Y + 14, r.X + 12, r.Y + 18);
+                // Pin head (rounded rectangle area)
+                g.DrawLine(pen, r.X + 7, r.Y + 4, r.X + 14, r.Y + 4);
+                g.DrawLine(pen, r.X + 14, r.Y + 4, r.X + 14, r.Y + 10);
+                g.DrawLine(pen, r.X + 14, r.Y + 10, r.X + 7, r.Y + 10);
+                g.DrawLine(pen, r.X + 7, r.Y + 10, r.X + 7, r.Y + 4);
+                // Pin needle
+                g.DrawLine(pen, r.X + 10, r.Y + 10, r.X + 10, r.Y + 16);
+                // Pin point
+                g.FillEllipse(new SolidBrush(color), r.X + 9, r.Y + 15, 3, 3);
             }
         }
 
@@ -922,44 +965,67 @@ namespace AiUsageWebView2
         {
             int cx = r.X + r.Width / 2;
             int cy = r.Y + r.Height / 2;
-            using (var pen = new Pen(color, 1.4f))
+            using (var pen = new Pen(color, 1.5f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
             {
-                for (int i = 0; i < 8; i++)
+                // Outer teeth
+                for (int i = 0; i < 6; i++)
                 {
-                    double a = i * Math.PI / 4.0;
-                    int x1 = cx + (int)Math.Round(Math.Cos(a) * 6);
-                    int y1 = cy + (int)Math.Round(Math.Sin(a) * 6);
-                    int x2 = cx + (int)Math.Round(Math.Cos(a) * 9);
-                    int y2 = cy + (int)Math.Round(Math.Sin(a) * 9);
+                    double a = i * Math.PI / 3.0;
+                    int x1 = cx + (int)Math.Round(Math.Cos(a) * 5.5);
+                    int y1 = cy + (int)Math.Round(Math.Sin(a) * 5.5);
+                    int x2 = cx + (int)Math.Round(Math.Cos(a) * 8.5);
+                    int y2 = cy + (int)Math.Round(Math.Sin(a) * 8.5);
                     g.DrawLine(pen, x1, y1, x2, y2);
                 }
-                g.DrawEllipse(pen, cx - 6, cy - 6, 12, 12);
-                g.DrawEllipse(pen, cx - 2, cy - 2, 4, 4);
+                g.DrawEllipse(pen, cx - 5, cy - 5, 10, 10);
+                using (var fill = new SolidBrush(color))
+                    g.FillEllipse(fill, cx - 2, cy - 2, 4, 4);
             }
         }
 
         static void DrawBar(Graphics g, int x, int y, int w, int h, int? pct, Color accent)
         {
-            using (var bg = new SolidBrush(Color.FromArgb(44, 44, 44)))
-            using (var path = RoundRect(x, y, w, h, h / 2))
-                g.FillPath(bg, path);
+            int barH = Math.Max(h, 9);
+            // Track background with subtle inset
+            using (var bgPath = RoundRect(x, y, w, barH, barH / 2))
+            {
+                using (var bg = new SolidBrush(Color.FromArgb(20, 20, 24)))
+                    g.FillPath(bg, bgPath);
+                using (var inset = new Pen(Color.FromArgb(35, 35, 40), 0.6f))
+                    g.DrawPath(inset, bgPath);
+            }
             if (!pct.HasValue) return;
-            int fillW = Math.Max(pct.Value <= 0 ? 0 : 5, (int)Math.Round(w * Math.Max(0, Math.Min(100, pct.Value)) / 100.0));
+            int fillW = Math.Max(pct.Value <= 0 ? 0 : 6, (int)Math.Round(w * Math.Max(0, Math.Min(100, pct.Value)) / 100.0));
             if (fillW <= 0) return;
-            using (var fg = new SolidBrush(accent))
-            using (var path = RoundRect(x, y, fillW, h, h / 2))
-                g.FillPath(fg, path);
+
+            // Glow beneath the bar
+            using (var glowPath = RoundRect(x, y + 1, fillW, barH, barH / 2))
+            using (var glow = new SolidBrush(Color.FromArgb(30, accent.R, accent.G, accent.B)))
+                g.FillPath(glow, glowPath);
+
+            // Gradient fill
+            using (var fillPath = RoundRect(x, y, fillW, barH, barH / 2))
+            {
+                Color lighter = Color.FromArgb(Math.Min(255, accent.R + 40), Math.Min(255, accent.G + 40), Math.Min(255, accent.B + 40));
+                using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(new Rectangle(x, y, fillW, barH), lighter, accent, 90f))
+                    g.FillPath(grad, fillPath);
+
+                // Top highlight on bar
+                using (var hlPath = RoundRect(x + 1, y + 1, Math.Max(4, fillW - 2), barH / 2, barH / 4))
+                using (var hl = new SolidBrush(Color.FromArgb(45, 255, 255, 255)))
+                    g.FillPath(hl, hlPath);
+            }
         }
 
         void DrawResizeGrip(Graphics g)
         {
-            using (var pen = new Pen(Color.FromArgb(120, 120, 120), 1.2f))
+            int right = ClientSize.Width - 6;
+            int bottom = ClientSize.Height - 6;
+            using (var dotBrush = new SolidBrush(Color.FromArgb(70, 75, 82)))
             {
-                int right = ClientSize.Width - 4;
-                int bottom = ClientSize.Height - 4;
-                g.DrawLine(pen, right - 13, bottom, right, bottom - 13);
-                g.DrawLine(pen, right - 8, bottom, right, bottom - 8);
-                g.DrawLine(pen, right - 3, bottom, right, bottom - 3);
+                for (int row = 0; row < 3; row++)
+                    for (int col = row; col < 3; col++)
+                        g.FillEllipse(dotBrush, right - (2 - col) * 5 - 2, bottom - (2 - row) * 5 - 2, 3, 3);
             }
         }
 
@@ -1028,8 +1094,8 @@ namespace AiUsageWebView2
             this.original = settings.Clone();
             this.preview = preview;
             Text = T("設定", "Settings");
-            Width = 520;
-            Height = 632;
+            Width = 820;
+            Height = 420;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -1037,30 +1103,44 @@ namespace AiUsageWebView2
             BackColor = Color.FromArgb(24, 24, 26);
             ForeColor = Color.WhiteSmoke;
 
-            AddLanguage(T("言語", "Language"), language, settings.Language, 18, 18);
-            AddNumber(T("通常更新（分）", "Normal refresh (min)"), normal, settings.NormalIntervalMinutes, 18, 60);
-            AddNumber(T("ブースト時間（分）", "Boost duration (min)"), boostDuration, settings.BoostDurationMinutes, 18, 102);
-            AddNumber(T("ブースト更新（分）", "Boost refresh (min)"), boostInterval, settings.BoostIntervalMinutes, 18, 144);
-            AddNumber(T("直前更新開始（分）", "Final refresh window (min)"), finalWindow, settings.FinalRefreshWindowMinutes, 18, 186, 1, 120);
-            AddNumber(T("直前更新間隔（分）", "Final refresh interval (min)"), finalInterval, settings.FinalRefreshIntervalMinutes, 18, 228, 1, 30);
-            AddMode("Codex " + T("表示", "display"), codexMode, settings.CodexShowUsed, 18, 270);
-            AddMode("Claude " + T("表示", "display"), claudeMode, settings.ClaudeShowUsed, 18, 312);
-            AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), 18, 354, 6, 32);
-            AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), 18, 396, 8, 42);
-            AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), 18, 438, 6, 32);
-            AddNumber(T("黄色しきい値（残量%）", "Yellow threshold (left %)"), warningPercent, settings.WarningRemainingPercent, 18, 480, 1, 99);
-            AddNumber(T("赤しきい値（残量%）", "Red threshold (left %)"), criticalPercent, settings.CriticalRemainingPercent, 18, 522, 1, 99);
-            AddText(T("黄色", "Yellow"), warningColor, settings.WarningColor, 330, 480);
-            AddText(T("赤", "Red"), criticalColor, settings.CriticalColor, 330, 522);
+            int colL = 18;
+            int colR = 420;
+            int row = 38;
+            int startY = 18;
+
+            // Left column: Timing & General
+            AddSectionLabel(T("更新設定", "Refresh"), colL, startY - 2);
+            AddNumber(T("通常（分）", "Normal (min)"), normal, settings.NormalIntervalMinutes, colL, startY + 22);
+            AddNumber(T("ブースト時間（分）", "Boost duration (min)"), boostDuration, settings.BoostDurationMinutes, colL, startY + 22 + row);
+            AddNumber(T("ブースト更新（分）", "Boost refresh (min)"), boostInterval, settings.BoostIntervalMinutes, colL, startY + 22 + row * 2);
+            AddNumber(T("直前更新開始（分）", "Final window (min)"), finalWindow, settings.FinalRefreshWindowMinutes, colL, startY + 22 + row * 3, 1, 120);
+            AddNumber(T("直前更新間隔（分）", "Final interval (min)"), finalInterval, settings.FinalRefreshIntervalMinutes, colL, startY + 22 + row * 4, 1, 30);
+
+            AddSectionLabel(T("一般", "General"), colL, startY + 22 + row * 5 + 10);
+            AddLanguage(T("言語", "Language"), language, settings.Language, colL, startY + 22 + row * 5 + 32);
 
             topMost.Text = T("常に最前面に固定", "Always on top");
             topMost.Checked = settings.AlwaysOnTop;
-            topMost.Location = new Point(22, 558);
-            topMost.Width = 180;
+            topMost.Location = new Point(colL + 4, startY + 22 + row * 5 + 32 + row);
+            topMost.Width = 200;
             Controls.Add(topMost);
 
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(322, 558), Width = 72 };
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(404, 558), Width = 82 };
+            // Right column: Display
+            AddSectionLabel(T("表示設定", "Display"), colR, startY - 2);
+            AddMode("Codex " + T("表示", "display"), codexMode, settings.CodexShowUsed, colR, startY + 22);
+            AddMode("Claude " + T("表示", "display"), claudeMode, settings.ClaudeShowUsed, colR, startY + 22 + row);
+            AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), colR, startY + 22 + row * 2, 6, 32);
+            AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), colR, startY + 22 + row * 3, 8, 42);
+            AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), colR, startY + 22 + row * 4, 6, 32);
+
+            AddSectionLabel(T("しきい値", "Thresholds"), colR, startY + 22 + row * 5 + 10);
+            AddNumberWithColor(T("黄色（残量%）", "Yellow (left %)"), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, colR, startY + 22 + row * 5 + 32, 1, 99);
+            AddNumberWithColor(T("赤（残量%）", "Red (left %)"), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, colR, startY + 22 + row * 5 + 32 + row, 1, 99);
+
+            // Bottom buttons
+            int btnY = Height - 72;
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 192, btnY), Width = 76, Height = 28 };
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 104, btnY), Width = 76, Height = 28 };
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
@@ -1081,6 +1161,28 @@ namespace AiUsageWebView2
             };
         }
 
+        void AddSectionLabel(string text, int x, int y)
+        {
+            var label = new Label
+            {
+                Text = text,
+                Location = new Point(x, y),
+                Width = 200,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(140, 160, 200)
+            };
+            Controls.Add(label);
+        }
+
+        void AddNumberWithColor(string text, NumericUpDown box, int value, TextBox colorBox, string colorValue, int x, int y, int min, int max)
+        {
+            AddNumber(text, box, value, x, y, min, max);
+            colorBox.Text = colorValue;
+            colorBox.Location = new Point(x + 290, y);
+            colorBox.Width = 72;
+            Controls.Add(colorBox);
+        }
+
         void AddNumber(string text, NumericUpDown box, int value, int x, int y)
         {
             AddNumber(text, box, value, x, y, 1, 240);
@@ -1088,48 +1190,38 @@ namespace AiUsageWebView2
 
         void AddNumber(string text, NumericUpDown box, int value, int x, int y, int min, int max)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
             box.Minimum = min;
             box.Maximum = max;
             box.Value = Math.Max(min, Math.Min(max, value));
-            box.Location = new Point(230, y);
-            box.Width = 70;
+            box.Location = new Point(x + 210, y);
+            box.Width = 68;
             Controls.Add(label);
             Controls.Add(box);
         }
 
         void AddMode(string text, ComboBox box, bool showUsed, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.Items.Add(T("残量表示", "Remaining"));
             box.Items.Add(T("使用量表示", "Used"));
             box.SelectedIndex = showUsed ? 1 : 0;
-            box.Location = new Point(230, y);
-            box.Width = 120;
+            box.Location = new Point(x + 210, y);
+            box.Width = 110;
             Controls.Add(label);
             Controls.Add(box);
         }
 
         void AddLanguage(string text, ComboBox box, string value, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 205, ForeColor = Color.WhiteSmoke };
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 200, ForeColor = Color.FromArgb(220, 222, 228) };
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.Items.Add("日本語");
             box.Items.Add("English");
             box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            box.Location = new Point(230, y);
-            box.Width = 120;
-            Controls.Add(label);
-            Controls.Add(box);
-        }
-
-        void AddText(string text, TextBox box, string value, int x, int y)
-        {
-            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 40, ForeColor = Color.WhiteSmoke };
-            box.Text = value;
-            box.Location = new Point(x + 42, y);
-            box.Width = 78;
+            box.Location = new Point(x + 210, y);
+            box.Width = 110;
             Controls.Add(label);
             Controls.Add(box);
         }

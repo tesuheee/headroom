@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-usage-webview2-portable — 仕組み解説</title>
+<style>
+  :root {
+    --bg: #0f0f12;
+    --surface: #1c1c1e;
+    --surface2: #252528;
+    --border: #3a3a3c;
+    --text: #f8f8f8;
+    --muted: #8e8e93;
+    --claude: #2d84eb;
+    --codex: #1ab15c;
+    --warning: #e8a924;
+    --critical: #e04949;
+    --accent: #9b59b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 32px 24px 80px;
+  }
+
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 40px; }
+
+  .section { margin-bottom: 56px; }
+  .section-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ===== OVERVIEW NODES ===== */
+  .overview {
+    display: grid;
+    grid-template-columns: 1fr 36px 1fr 36px 1fr 36px 1fr;
+    align-items: center; gap: 0; overflow-x: auto; padding: 8px 0;
+  }
+  .node {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 14px; text-align: center;
+    position: relative; transition: border-color .2s, transform .2s; cursor: default;
+  }
+  .node:hover { border-color: #666; transform: translateY(-2px); }
+  .node-icon { font-size: 28px; margin-bottom: 8px; display: block; }
+  .node-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .node-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .arrow { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:20px; }
+  .node.claude { border-color: var(--claude); }
+  .node.codex  { border-color: var(--codex); }
+  .node.ui     { border-color: var(--accent); }
+  .node.parse  { border-color: var(--warning); }
+
+  /* ===== FLOW ===== */
+  .flow { display:flex; flex-direction:column; gap:0; }
+  .flow-step { display:flex; align-items:flex-start; gap:0; }
+  .flow-left { display:flex; flex-direction:column; align-items:center; width:36px; flex-shrink:0; }
+  .flow-circle {
+    width:32px; height:32px; border-radius:50%; background:var(--surface2);
+    border:2px solid var(--border); display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700; flex-shrink:0; z-index:1;
+  }
+  .flow-line { width:2px; flex:1; min-height:24px; background:var(--border); }
+  .flow-body {
+    flex:1; background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:12px 16px; margin-left:12px; margin-bottom:12px;
+  }
+  .flow-body-title { font-weight:600; font-size:13px; margin-bottom:4px; }
+  .flow-body-desc { font-size:12px; color:var(--muted); }
+  .flow-step:last-child .flow-line { display:none; }
+
+  code {
+    background:var(--surface2); border:1px solid var(--border); border-radius:4px;
+    padding:1px 5px; font-family:"SF Mono",Consolas,monospace; font-size:11px; color:#ccc;
+  }
+
+  /* ===== TIMER GRID ===== */
+  .timer-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .timer-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .timer-card-title { font-size:12px; font-weight:600; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.8px; }
+  .timer-value { font-size:26px; font-weight:700; }
+  .timer-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  /* ===== REFRESH TIMELINE ===== */
+  .refresh-timeline { position:relative; height:80px; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .refresh-bar { position:absolute; top:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; }
+  .refresh-bar.normal { left:0; width:55%; background:rgba(45,132,235,.15); border-right:2px solid var(--claude); color:var(--claude); }
+  .refresh-bar.final  { left:55%; width:30%; background:rgba(232,169,36,.2); border-right:2px solid var(--warning); color:var(--warning); }
+  .refresh-bar.boost  { left:85%; right:0; background:rgba(224,73,73,.2); color:var(--critical); }
+  .refresh-label { writing-mode:horizontal-tb; text-align:center; }
+  .refresh-axis { display:flex; justify-content:space-between; margin-top:8px; font-size:11px; color:var(--muted); }
+
+  /* ===== COLOR CHIPS ===== */
+  .color-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .color-chip { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; }
+  .color-dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; }
+  .color-label { font-size:12px; font-weight:600; }
+  .color-hex { font-size:11px; color:var(--muted); font-family:monospace; }
+
+  /* ===== TECH CARDS ===== */
+  .tech-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
+  .tech-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .tech-card-label { font-size:10px; font-weight:600; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .tech-card-value { font-size:13px; font-weight:600; }
+
+  /* ===== TABS ===== */
+  .tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+  .tab { padding:8px 16px; font-size:13px; cursor:pointer; border-bottom:2px solid transparent; color:var(--muted); background:none; border-top:none; border-left:none; border-right:none; transition:color .15s; margin-bottom:-1px; }
+  .tab.active { color:var(--text); border-bottom-color:var(--claude); }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+
+  /* ===== MOCK WIDGET ===== */
+  .mock-outer {
+    background: #111113;
+    border-radius: 16px;
+    padding: 8px;
+    max-width: 680px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.7);
+  }
+  .mock-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr 24px;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .mock-card {
+    border-radius: 12px;
+    padding: 13px 14px 12px;
+    position: relative;
+  }
+  .mock-card.normal {
+    background: linear-gradient(180deg, #1e1e22 0%, #161618 100%);
+    border: 0.8px solid #303036;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .mock-card.stale {
+    background: linear-gradient(180deg, #26221600 0%, #1e1c1200 100%);
+    background: linear-gradient(180deg, #26220e 0%, #1e1c10 100%);
+    border: 0.8px solid #504818;
+  }
+  .mock-card.exhausted {
+    background: linear-gradient(180deg, #2a1616 0%, #201010 100%);
+    border: 0.8px solid #50282a;
+  }
+  .mock-service-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:middle; margin-bottom:1px; }
+  .mock-service-name { font-size:13px; font-weight:700; color:#f0f2f5; margin-bottom:9px; }
+  .mock-rows { display:flex; flex-direction:column; gap:7px; }
+  .mock-row { display:flex; align-items:center; gap:6px; }
+  .mock-label { font-size:10px; color:#8e8e93; width:28px; flex-shrink:0; }
+  .mock-mode  { font-size:10px; color:#5c5c65; width:22px; flex-shrink:0; }
+  .mock-pct   { font-size:14px; font-weight:700; width:42px; flex-shrink:0; text-align:right; }
+  .mock-bar-wrap { flex:1; height:8px; background:#14141a; border-radius:4px; overflow:visible; position:relative; }
+  .mock-bar-fill { height:100%; border-radius:4px; position:relative; }
+  .mock-bar-fill::after { content:''; position:absolute; top:1px; left:1px; right:2px; height:3px; background:rgba(255,255,255,.18); border-radius:3px; }
+  .mock-reset { font-size:9.5px; color:#6e7480; width:64px; flex-shrink:0; text-align:right; }
+  .mock-badge {
+    display:inline-block; font-size:8px; font-weight:700; padding:1px 5px;
+    border-radius:8px; vertical-align:middle; margin-left:4px;
+  }
+  .mock-badge.stale    { background:#3a2e08; color:#c8a030; border: .5px solid #705010; }
+  .mock-badge.limit    { background:#3a1010; color:#dc6464; border: .5px solid #702020; }
+
+  .mock-controls { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-bottom:6px; }
+  .mock-toggle { width:28px; height:15px; border-radius:8px; background:#323236; border:.5px solid rgba(255,255,255,.1); display:inline-flex; align-items:center; padding:0 2px; }
+  .mock-toggle.on { background:linear-gradient(90deg,#2864dc,#3c96ff); }
+  .mock-toggle-knob { width:10px; height:10px; border-radius:50%; background:#f5f8fc; box-shadow:0 1px 2px rgba(0,0,0,.4); }
+  .mock-toggle.on .mock-toggle-knob { margin-left:auto; }
+  .mock-refresh { font-size:14px; color:#c8cdd4; }
+  .mock-boost-label { font-size:9px; color:#6e7480; }
+
+  .mock-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 12px;
+    gap: 16px;
+  }
+  .mock-rail-btn { font-size:14px; color:#5c5c65; cursor:default; }
+  .mock-rail-btn.active { color:#64b4ff; }
+
+  @keyframes fillBar { from { width:0; } }
+  .mock-bar-fill { animation: fillBar 1.2s ease forwards; }
+
+  /* ===== RENDER LAYERS ===== */
+  .layer-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .layer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .layer-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .layer-body { flex:1; }
+  .layer-title { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .layer-desc  { font-size: 11px; color: var(--muted); }
+
+  /* ===== CARD STATES ===== */
+  .card-states { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+  .state-card { border-radius: 10px; padding: 12px 14px; }
+  .state-name { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .state-desc { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>🤖 ai-usage-webview2-portable</h1>
+<p class="subtitle">Claude & Codex の使用量をリアルタイム表示するデスクトップウィジェット — 仕組み解説</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('overview')">① 全体像</button>
+  <button class="tab" onclick="showTab('flow')">② データフロー</button>
+  <button class="tab" onclick="showTab('refresh')">③ 更新スケジュール</button>
+  <button class="tab" onclick="showTab('ui')">④ UI・描画</button>
+  <button class="tab" onclick="showTab('stack')">⑤ 技術構成</button>
+</div>
+
+<!-- ===== TAB: OVERVIEW ===== -->
+<div id="tab-overview" class="tab-content active">
+
+  <div class="section">
+    <div class="section-title">システム全体像</div>
+    <div class="overview">
+      <div class="node">
+        <span class="node-icon">🌐</span>
+        <div class="node-title">Webサービス</div>
+        <div class="node-desc">claude.ai/settings/usage<br>chatgpt.com/codex/…/analytics</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node claude">
+        <span class="node-icon">🪟</span>
+        <div class="node-title">WebView2<br>(非表示ブラウザ)</div>
+        <div class="node-desc">Edgeエンジン×2本<br>Cookie でログイン維持<br>JS実行でDOM取得</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node parse">
+        <span class="node-icon">🔍</span>
+        <div class="node-title">行分割 & 正規表現<br>パース</div>
+        <div class="node-desc">SplitLines → FindIndex<br>→ セクション範囲で<br>% & リセット時刻抽出</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node ui">
+        <span class="node-icon">📊</span>
+        <div class="node-title">GDI+ 描画<br>(グラデーション)</div>
+        <div class="node-desc">2カラム並列表示<br>グラデ背景・グローバー<br>常に最前面</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">コアクラス構成</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="node" style="text-align:left;padding:16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">メインクラス</div>
+        <div class="node-title" style="font-size:15px;margin-bottom:8px;">UsageForm</div>
+        <div style="font-size:12px;color:var(--muted);">
+          ウィンドウ管理 / WebViewスクレイピング<br>
+          スケジューリング / GDI+カスタム描画<br>
+          マウス・キーボードイベント処理
+        </div>
+      </div>
+      <div class="node" style="text-align:left;padding:16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">設定ダイアログ</div>
+        <div class="node-title" style="font-size:15px;margin-bottom:8px;">SettingsForm</div>
+        <div style="font-size:12px;color:var(--muted);">
+          ライブプレビュー付き設定UI<br>
+          フォントサイズ / 色 / 間隔<br>
+          settings.json に書き込み
+        </div>
+      </div>
+      <div class="node" style="text-align:left;padding:16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">ランタイム状態</div>
+        <div class="node-title" style="font-size:15px;margin-bottom:8px;">ServiceState</div>
+        <div style="font-size:12px;color:var(--muted);">
+          各サービスの状態管理<br>
+          最終更新時刻 / IsRefreshing / BoostUntil<br>
+          <code>BoostActive</code> 計算プロパティ
+        </div>
+      </div>
+      <div class="node" style="text-align:left;padding:16px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">使用量データ</div>
+        <div class="node-title" style="font-size:15px;margin-bottom:8px;">UsageData</div>
+        <div style="font-size:12px;color:var(--muted);">
+          FiveHourUsed / WeeklyUsed (double?)<br>
+          FiveHourRemaining / WeeklyRemaining (int?)<br>
+          Used⇔Remaining を相互変換するメソッド群
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== TAB: FLOW ===== -->
+<div id="tab-flow" class="tab-content">
+  <div class="section">
+    <div class="section-title">データ取得〜表示までのフロー</div>
+    <div class="flow">
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--claude);color:var(--claude);">1</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">🚀 起動・WebView2 初期化</div>
+          <div class="flow-body-desc">
+            <code>InitializeWebViewsAsync()</code> が非表示 WebView2 を2インスタンス作成。<br>
+            プロファイルは <code>%LOCALAPPDATA%\AiUsageWebView2\WebView2Profile</code> に保存され、
+            Cookie が持続するので一度ログインすれば次回以降は自動認証。<br>
+            2サービスは <code>Task.WhenAll()</code> で並列取得。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--claude);color:var(--claude);">2</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">🌐 ページナビゲーション</div>
+          <div class="flow-body-desc">
+            <code>ScrapeAsync()</code> が URL にキャッシュバスター付きで遷移。<br>
+            <code>NavigationCompleted</code> イベント待ち（最大 30 秒タイムアウト）。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--warning);color:var(--warning);">3</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">⏳ コンテンツ安定化ポーリング <span style="color:var(--warning);font-size:11px;">（重要）</span></div>
+          <div class="flow-body-desc">
+            NavigationCompleted 後も動的レンダリングが続く可能性があるため、
+            <strong>1.2秒 × 最大10回</strong> ポーリングして内容が安定するのを待つ。<br>
+            「100文字以上あり、かつ前回と同じテキスト」になった時点で完了と判定。<br>
+            → SPA（React 等）で遅延描画されるコンテンツにも対応する工夫。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--warning);color:var(--warning);">4</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">📄 JavaScript で DOM テキスト取得</div>
+          <div class="flow-body-desc">
+            <code>document.body.innerText</code> を JS 実行で取得 → <code>DecodeJsonString()</code> でエスケープ解除。<br>
+            生 HTML ではなくレンダリング済みテキストなので、CSS で非表示の要素はスキップされる。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--warning);color:var(--warning);">5</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">🔍 行分割 → セクション特定 → 正規表現パース</div>
+          <div class="flow-body-desc">
+            <code>SplitLines()</code> でテキストを行配列に分割し、<code>FindIndex()</code> でセクション見出し行を特定。<br>
+            セクションの開始〜終了インデックスの範囲内だけを対象に % と リセット時刻を抽出する。<br>
+            <strong>Claude:</strong> "現在のセッション" / "週間制限" → <code>(\d+)\s*%\s*使用済み</code><br>
+            <strong>Codex:</strong> "5時間の使用制限" / "週あたりの使用制限" → <code>(\d+)\s*%\s*(残り|remaining)?</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--codex);color:var(--codex);">6</div>
+          <div class="flow-line"></div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">📊 UI 更新 (GDI+ 再描画)</div>
+          <div class="flow-body-desc">
+            <code>ServiceState</code> / <code>UsageData</code> を更新 → <code>Invalidate()</code> を呼び出す。<br>
+            250ms タイマーが常時 <code>OnPaint()</code> → <code>DrawService()</code> を駆動（スピナーアニメも同じタイマー）。
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-left">
+          <div class="flow-circle" style="border-color:var(--accent);color:var(--accent);">7</div>
+        </div>
+        <div class="flow-body">
+          <div class="flow-body-title">⚠️ エラー・デバッグ</div>
+          <div class="flow-body-desc">
+            ログイン未完了 → "ログイン" バッジ表示 → クリックでログインダイアログ。<br>
+            取得テキストは <code>~\.ai-usage-widget\{name}-webview2.txt</code> に毎回保存。<br>
+            例外は <code>{name}-error.txt</code> に記録。パース変化があってもファイルで追跡できる。
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: REFRESH ===== -->
+<div id="tab-refresh" class="tab-content">
+  <div class="section">
+    <div class="section-title">3段階の更新スケジュール</div>
+    <div style="margin-bottom:24px;">
+      <div class="refresh-timeline">
+        <div class="refresh-bar normal"><div class="refresh-label">🕐 通常モード<br>15分おき</div></div>
+        <div class="refresh-bar final"><div class="refresh-label">⚡ ファイナル<br>1分おき</div></div>
+        <div class="refresh-bar boost"><div class="refresh-label">🚀 Boost<br>1分</div></div>
+      </div>
+      <div class="refresh-axis">
+        <span>リセットまで3時間+</span>
+        <span>↑ 残り15分 ↑</span>
+        <span>手動ON</span>
+      </div>
+    </div>
+
+    <div class="timer-grid">
+      <div class="timer-card">
+        <div class="timer-card-title">🟢 通常モード (Normal)</div>
+        <div class="timer-value">15<span style="font-size:16px;color:var(--muted)"> 分</span></div>
+        <div class="timer-sub">デフォルト: <code>normalIntervalMinutes = 15</code></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+          10秒ごとの <code>schedulerTimer</code> が「経過時間 ≥ 設定間隔？」をチェックし、条件を満たしたらリクエスト投入。
+        </div>
+      </div>
+      <div class="timer-card">
+        <div class="timer-card-title">🟡 ファイナルウィンドウ (Final)</div>
+        <div class="timer-value">1<span style="font-size:16px;color:var(--muted)"> 分</span></div>
+        <div class="timer-sub">デフォルト: <code>finalRefreshIntervalMinutes = 1</code></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+          5hリセットまで残り 15分（<code>finalRefreshWindowMinutes</code>）を切ると自動発動。制限解放の瞬間を素早くキャッチ。
+        </div>
+      </div>
+      <div class="timer-card">
+        <div class="timer-card-title">🔴 ブーストモード (Boost)</div>
+        <div class="timer-value">1<span style="font-size:16px;color:var(--muted)"> 分</span></div>
+        <div class="timer-sub">デフォルト継続時間: <code>boostDurationMinutes = 15</code></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+          ユーザーがトグルで手動 ON。15分間（設定可）だけ1分更新。OFF にするか時間切れで自動終了。
+        </div>
+      </div>
+      <div class="timer-card">
+        <div class="timer-card-title">🎨 描画タイマー (Paint)</div>
+        <div class="timer-value">250<span style="font-size:16px;color:var(--muted)"> ms</span></div>
+        <div class="timer-sub">固定値（変更不可）</div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted);">
+          UI 専用タイマー。<code>spinnerFrame</code> を 0→1→2→3→0 と更新して回転アニメ。データ取得とは完全独立。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">判定ロジック (RefreshIntervalMinutes)</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-family:monospace;font-size:12px;line-height:2.2;">
+      <span style="color:#e04949;">if</span> (service.BoostUntil != null) {<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted);">// Boost ON → 短い間隔</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#e04949;">return</span> <span style="color:#2d84eb;">BoostIntervalMinutes</span>;&nbsp;&nbsp;<span style="color:var(--muted);">// 1分</span><br>
+      } <span style="color:#e04949;">else if</span> (resetRemaining &lt; FinalWindow) {<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted);">// 5h リセットが近い → ファイナルウィンドウ</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#e04949;">return</span> <span style="color:#e8a924;">FinalRefreshIntervalMinutes</span>;&nbsp;<span style="color:var(--muted);">// 1分</span><br>
+      } <span style="color:#e04949;">else</span> {<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted);">// 通常時</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#e04949;">return</span> <span style="color:#1ab15c;">NormalIntervalMinutes</span>;&nbsp;&nbsp;&nbsp;<span style="color:var(--muted);">// 15分</span><br>
+      }
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: UI ===== -->
+<div id="tab-ui" class="tab-content">
+
+  <div class="section">
+    <div class="section-title">ウィジェット外観 — 実際のレイアウト (左右2カラム + サイドレール)</div>
+    <div class="mock-outer">
+      <div class="mock-inner">
+
+        <!-- Codex カード (左) -->
+        <div class="mock-card normal">
+          <div class="mock-controls">
+            <span class="mock-boost-label">残り8分</span>
+            <div class="mock-toggle on"><div class="mock-toggle-knob"></div></div>
+            <span class="mock-refresh">↻</span>
+          </div>
+          <div class="mock-service-name">
+            <span class="mock-service-dot" style="background:#1ab15c;"></span>Codex
+          </div>
+          <div class="mock-rows">
+            <div class="mock-row">
+              <span class="mock-label">5時間</span>
+              <span class="mock-mode">残り</span>
+              <span class="mock-pct" style="color:#f0f2f8;">72%</span>
+              <div class="mock-bar-wrap">
+                <div class="mock-bar-fill" style="width:72%;background:linear-gradient(180deg,#2fd070,#1ab15c);box-shadow:0 0 6px rgba(26,177,92,.4);"></div>
+              </div>
+              <span class="mock-reset">3h 42m</span>
+            </div>
+            <div class="mock-row">
+              <span class="mock-label">週</span>
+              <span class="mock-mode">残り</span>
+              <span class="mock-pct" style="color:#f0f2f8;">55%</span>
+              <div class="mock-bar-wrap">
+                <div class="mock-bar-fill" style="width:55%;background:linear-gradient(180deg,#2fd070,#1ab15c);box-shadow:0 0 6px rgba(26,177,92,.4);"></div>
+              </div>
+              <span class="mock-reset">5/24 9:49</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Claude カード (右) — Exhausted 状態 -->
+        <div class="mock-card exhausted">
+          <div class="mock-controls">
+            <div class="mock-toggle"><div class="mock-toggle-knob"></div></div>
+            <span class="mock-refresh" style="color:#6474a0;">↻</span>
+          </div>
+          <div class="mock-service-name">
+            <span class="mock-service-dot" style="background:#dc4d4d;"></span>Claude
+            <span class="mock-badge limit">上限</span>
+            <span style="font-size:9px;color:#6e7480;margin-left:4px;">あと 12分</span>
+          </div>
+          <div class="mock-rows">
+            <div class="mock-row">
+              <span class="mock-label">5時間</span>
+              <span class="mock-mode">使用</span>
+              <span class="mock-pct" style="color:#ff8282;">100%</span>
+              <div class="mock-bar-wrap">
+                <div class="mock-bar-fill" style="width:100%;background:linear-gradient(180deg,#e86060,#dc4d4d);box-shadow:0 0 8px rgba(220,77,77,.5);"></div>
+              </div>
+              <span class="mock-reset">あと12分</span>
+            </div>
+            <div class="mock-row">
+              <span class="mock-label">週</span>
+              <span class="mock-mode">使用</span>
+              <span class="mock-pct" style="color:#f5c864;">62%</span>
+              <div class="mock-bar-wrap">
+                <div class="mock-bar-fill" style="width:62%;background:linear-gradient(180deg,#f5c030,#e8a924);box-shadow:0 0 6px rgba(232,169,36,.4);"></div>
+              </div>
+              <span class="mock-reset">5/24 9:49</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- サイドレール (右端) -->
+        <div class="mock-rail">
+          <div class="mock-rail-btn">✕</div>
+          <div class="mock-rail-btn active">📌</div>
+          <div class="mock-rail-btn">⚙</div>
+        </div>
+
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);">
+      ※ 右カードは「Exhausted（使用量100%）」状態の例。背景が赤みがかり、アクセントドットも赤に変化します。
+      サイドレール（右端）に閉じる・ピン・設定ボタンが縦並び。
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">カード状態 (3種類)</div>
+    <div class="card-states">
+      <div class="state-card" style="background:linear-gradient(180deg,#1e1e22,#161618);border:.8px solid #303036;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);">
+        <div class="state-name" style="color:#f0f2f5;">🟢 Normal</div>
+        <div class="state-desc">
+          背景グラデ: <code>#1E1E22 → #161618</code><br>
+          ボーダー: <code>#303036</code><br>
+          上端にごく薄い白ハイライト
+        </div>
+      </div>
+      <div class="state-card" style="background:linear-gradient(180deg,#26220e,#1e1c10);border:.8px solid #504818;">
+        <div class="state-name" style="color:#c8b060;">🟡 Stale (古いデータ)</div>
+        <div class="state-desc">
+          背景グラデ: <code>#26220E → #1E1C10</code><br>
+          ボーダー: <code>#504818</code>（黄みがかり）<br>
+          "古い" バッジを表示
+        </div>
+      </div>
+      <div class="state-card" style="background:linear-gradient(180deg,#2a1616,#201010);border:.8px solid #50282a;">
+        <div class="state-name" style="color:#e06060;">🔴 Exhausted (上限到達)</div>
+        <div class="state-desc">
+          背景グラデ: <code>#2A1616 → #201010</code><br>
+          ボーダー: <code>#50282A</code>（赤みがかり）<br>
+          アクセントカラーが赤に変化・"上限" バッジ
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">バーの描画レイヤー (DrawBar)</div>
+    <div class="layer-stack">
+      <div class="layer">
+        <div class="layer-num" style="background:#1a1a20;border:1px solid #3a3a3c;color:#6e7480;">1</div>
+        <div class="layer-body">
+          <div class="layer-title">トラック背景</div>
+          <div class="layer-desc"><code>#14141A</code> の単色 + 内側に薄いボーダー。バー全体の「溝」。</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num" style="background:rgba(45,132,235,.15);border:1px solid rgba(45,132,235,.4);color:var(--claude);">2</div>
+        <div class="layer-body">
+          <div class="layer-title">グロー (Glow)</div>
+          <div class="layer-desc">塗り幅分の半透明アクセントカラーをトラック底部にオフセット描画。光って浮いて見える効果。</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num" style="background:linear-gradient(180deg,#5daaff,#2d84eb);border:none;color:#fff;">3</div>
+        <div class="layer-body">
+          <div class="layer-title">グラデーションフィル</div>
+          <div class="layer-desc">上端を明るく下端を本来色にした <code>LinearGradientBrush</code>（上→下）で塗り幅を描画。</div>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-num" style="background:rgba(255,255,255,.18);border:none;color:#aaa;">4</div>
+        <div class="layer-body">
+          <div class="layer-title">トップハイライト</div>
+          <div class="layer-desc">フィル上半分に白 18% 透明の細いパスを重ねて「艶」を表現。</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);">
+      バー幅が 0 のとき（100% 到達）: グロー・フィル・ハイライトはスキップ。% ≤ 0 の場合も最小幅 0 で非表示。
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">GDI+ 描画メソッド一覧</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawService()</code></div>
+        <div style="font-size:12px;">カード全体（グラデ背景・ハイライト・ボーダー・ドット・テキスト）</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawBar()</code></div>
+        <div style="font-size:12px;">グロー + グラデフィル + ハイライトの3層バー</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawRow()</code></div>
+        <div style="font-size:12px;">ラベル + 残り/使用 + % + バー + リセット時刻の1行</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawRefreshIcon()</code></div>
+        <div style="font-size:12px;">更新中: ◜◝◞◟ を250ms切替 / 待機中: ↻</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawToggle()</code></div>
+        <div style="font-size:12px;">ON時グラデ青 / OFF時グレー のiOS風トグル。ノブに影付き</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawSideRail()</code></div>
+        <div style="font-size:12px;">右端に close / pin / settings アイコンを縦並び</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawBadge()</code></div>
+        <div style="font-size:12px;">"古い"（Stale）/ "上限"（Limit）バッジ</div>
+      </div>
+      <div class="node" style="text-align:left;padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:2px;"><code>DrawResizeGrip()</code></div>
+        <div style="font-size:12px;">右下に3×3ドットのリサイズハンドル</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">カラーテーマ</div>
+    <div class="color-row">
+      <div class="color-chip">
+        <div class="color-dot" style="background:linear-gradient(180deg,#1e1e22,#161618);border:1px solid #3a3a3c;"></div>
+        <div><div class="color-label">カード背景</div><div class="color-hex">グラデーション</div></div>
+      </div>
+      <div class="color-chip">
+        <div class="color-dot" style="background:#2d84eb;"></div>
+        <div><div class="color-label">Claude</div><div class="color-hex">#2D84EB</div></div>
+      </div>
+      <div class="color-chip">
+        <div class="color-dot" style="background:#1ab15c;"></div>
+        <div><div class="color-label">Codex</div><div class="color-hex">#1AB15C</div></div>
+      </div>
+      <div class="color-chip">
+        <div class="color-dot" style="background:#e8a924;"></div>
+        <div><div class="color-label">Warning (残30%以下)</div><div class="color-hex">#E8A924</div></div>
+      </div>
+      <div class="color-chip">
+        <div class="color-dot" style="background:#e04949;"></div>
+        <div><div class="color-label">Critical (残15%以下)</div><div class="color-hex">#E04949</div></div>
+      </div>
+      <div class="color-chip">
+        <div class="color-dot" style="background:#dc4d4d;"></div>
+        <div><div class="color-label">Exhausted アクセント</div><div class="color-hex">#DC4D4D</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== TAB: STACK ===== -->
+<div id="tab-stack" class="tab-content">
+
+  <div class="section">
+    <div class="section-title">技術スタック</div>
+    <div class="tech-row">
+      <div class="tech-card"><div class="tech-card-label">言語</div><div class="tech-card-value">C# (.NET 4.6.2+)</div></div>
+      <div class="tech-card"><div class="tech-card-label">UIフレームワーク</div><div class="tech-card-value">Windows Forms</div></div>
+      <div class="tech-card"><div class="tech-card-label">描画エンジン</div><div class="tech-card-value">GDI+ (System.Drawing)</div></div>
+      <div class="tech-card"><div class="tech-card-label">ブラウザエンジン</div><div class="tech-card-value">Edge WebView2<br>v1.0.3537.50</div></div>
+      <div class="tech-card"><div class="tech-card-label">ビルド</div><div class="tech-card-value">PowerShell + csc.exe</div></div>
+      <div class="tech-card"><div class="tech-card-label">設定ファイル</div><div class="tech-card-value">JSON<br>(Regex 手動解析)</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">デフォルト設定値 (WidgetSettings)</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--surface2);color:var(--muted);">
+            <th style="padding:8px 14px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);">キー</th>
+            <th style="padding:8px 14px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);">デフォルト</th>
+            <th style="padding:8px 14px;text-align:left;font-weight:600;border-bottom:1px solid var(--border);">説明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>normalIntervalMinutes</code></td>
+            <td style="padding:7px 14px;font-weight:700;">15</td>
+            <td style="padding:7px 14px;color:var(--muted);">通常の更新間隔（分）</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>boostDurationMinutes</code></td>
+            <td style="padding:7px 14px;font-weight:700;">15</td>
+            <td style="padding:7px 14px;color:var(--muted);">Boost の継続時間（分）</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>boostIntervalMinutes</code></td>
+            <td style="padding:7px 14px;font-weight:700;">1</td>
+            <td style="padding:7px 14px;color:var(--muted);">Boost 中の更新間隔（分）</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>finalRefreshWindowMinutes</code></td>
+            <td style="padding:7px 14px;font-weight:700;">15</td>
+            <td style="padding:7px 14px;color:var(--muted);">ファイナルウィンドウ開始タイミング（分前）</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>finalRefreshIntervalMinutes</code></td>
+            <td style="padding:7px 14px;font-weight:700;">1</td>
+            <td style="padding:7px 14px;color:var(--muted);">ファイナルウィンドウ中の更新間隔（分）</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>warningRemainingPercent</code></td>
+            <td style="padding:7px 14px;font-weight:700;">30</td>
+            <td style="padding:7px 14px;color:var(--muted);">黄色バーに切り替わる残量%</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>criticalRemainingPercent</code></td>
+            <td style="padding:7px 14px;font-weight:700;">15</td>
+            <td style="padding:7px 14px;color:var(--muted);">赤バーに切り替わる残量%</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:7px 14px;"><code>claudeShowUsed</code></td>
+            <td style="padding:7px 14px;font-weight:700;">false</td>
+            <td style="padding:7px 14px;color:var(--muted);">Claude の表示モード（false = 残量表示）</td>
+          </tr>
+          <tr>
+            <td style="padding:7px 14px;"><code>codexShowUsed</code></td>
+            <td style="padding:7px 14px;font-weight:700;">false</td>
+            <td style="padding:7px 14px;color:var(--muted);">Codex の表示モード（false = 残量表示）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">設計上のこだわり</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div class="node" style="text-align:left;padding:14px 16px;">
+        <div style="font-weight:600;margin-bottom:4px;">📦 ポータブル設計</div>
+        <div style="font-size:12px;color:var(--muted);">レジストリ不使用。<code>bin/</code> フォルダごとコピー可。設定は <code>settings.json</code>、Cookie は WebView2 プロファイルに保存。</div>
+      </div>
+      <div class="node" style="text-align:left;padding:14px 16px;">
+        <div style="font-weight:600;margin-bottom:4px;">🚫 外部ライブラリ最小化</div>
+        <div style="font-size:12px;color:var(--muted);">JSON は Regex で手動パース。GDI+ で完全カスタム描画（WPF 等不使用）。依存は WebView2 NuGet のみ。</div>
+      </div>
+      <div class="node" style="text-align:left;padding:14px 16px;">
+        <div style="font-weight:600;margin-bottom:4px;">⏳ SPA 対応の安定化ポーリング</div>
+        <div style="font-size:12px;color:var(--muted);">NavigationCompleted 後も 1.2 秒 × 最大 10 回ポーリングして「テキストが落ち着いた」ことを確認してからパース。React 等の遅延レンダリングに対応。</div>
+      </div>
+      <div class="node" style="text-align:left;padding:14px 16px;">
+        <div style="font-weight:600;margin-bottom:4px;">🔀 Used/Remaining の相互変換</div>
+        <div style="font-size:12px;color:var(--muted);">Claude は使用% を返し、Codex は残量% を返す（サービスによって違う）。<code>UsageData</code> の計算プロパティが両方向変換し、表示モード（showUsed）に合わせて統一的に描画できる。</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
