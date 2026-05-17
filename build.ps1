@@ -28,11 +28,13 @@ Copy-Item $Loader $Out -Force
 
 $Exe = Join-Path $Out "AiUsageWebView2.exe"
 $Source = Join-Path $PSScriptRoot "Program.cs"
+$Icon = Join-Path $PSScriptRoot "app.ico"
 $Args = @(
   "/nologo",
   "/target:winexe",
   "/platform:x64",
   "/out:$Exe",
+  "/win32icon:$Icon",
   "/reference:System.dll",
   "/reference:System.Core.dll",
   "/reference:System.Drawing.dll",
