@@ -1378,8 +1378,8 @@ namespace AiUsageWebView2
         public int Width = 680;
         public int Height = 170;
         public string Language = "ja";
-        public int NormalIntervalMinutes = 15;
-        public int BoostDurationMinutes = 15;
+        public int NormalIntervalMinutes = 5;
+        public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
         public int FinalRefreshWindowMinutes = 15;
         public int FinalRefreshIntervalMinutes = 1;
@@ -1389,8 +1389,8 @@ namespace AiUsageWebView2
         public float LabelFontSize = 10.8f;
         public float PercentFontSize = 16.5f;
         public float ResetFontSize = 9.9f;
-        public int WarningRemainingPercent = 30;
-        public int CriticalRemainingPercent = 15;
+        public int WarningRemainingPercent = 50;
+        public int CriticalRemainingPercent = 30;
         public string WarningColor = "#E8A924";
         public string CriticalColor = "#E04949";
 
