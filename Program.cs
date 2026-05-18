@@ -1304,12 +1304,12 @@ namespace AiUsageWebView2
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int sz);
 
-        readonly ComboBox language = new ComboBox();
-        readonly ComboBox layoutMode = new ComboBox();
-        readonly ComboBox codexMode = new ComboBox();
-        readonly ComboBox claudeMode = new ComboBox();
-        readonly ComboBox fiveResetMode = new ComboBox();
-        readonly ComboBox weeklyResetMode = new ComboBox();
+        readonly DarkComboBox language = new DarkComboBox();
+        readonly DarkComboBox layoutMode = new DarkComboBox();
+        readonly DarkComboBox codexMode = new DarkComboBox();
+        readonly DarkComboBox claudeMode = new DarkComboBox();
+        readonly DarkComboBox fiveResetMode = new DarkComboBox();
+        readonly DarkComboBox weeklyResetMode = new DarkComboBox();
         readonly TextBox normal = new TextBox();
         readonly TextBox boostDuration = new TextBox();
         readonly TextBox boostInterval = new TextBox();
@@ -1566,35 +1566,16 @@ namespace AiUsageWebView2
             AddRow(parent, title, description, panel, ref y);
         }
 
-        void SetupCombo(ComboBox box, string value, string[] items)
+        void SetupCombo(DarkComboBox box, string value, string[] items)
         {
-            box.DropDownStyle = ComboBoxStyle.DropDownList;
-            box.FlatStyle = FlatStyle.Flat;
-            box.DrawMode = DrawMode.OwnerDrawFixed;
-            box.ItemHeight = 24;
-            box.BackColor = Color.FromArgb(47, 47, 50);
-            box.ForeColor = Color.FromArgb(235, 238, 244);
             box.Font = new Font("Yu Gothic UI", 9f);
             box.Width = 175;
-            box.Height = 28;
             box.Items.Clear();
             box.Items.AddRange(items);
-            box.DrawItem -= DrawComboItem;
-            box.DrawItem += DrawComboItem;
-            if (box == layoutMode) box.SelectedIndex = string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            else if (box == codexMode || box == claudeMode) box.SelectedIndex = string.Equals(value, "used", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            if (box == layoutMode)                              box.SelectedIndex = string.Equals(value, "vertical",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            else if (box == language) box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-        }
-
-        void DrawComboItem(object sender, DrawItemEventArgs e)
-        {
-            if (e.Index < 0) return;
-            var selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-            using (var bg = new SolidBrush(selected ? Color.FromArgb(70, 70, 76) : Color.FromArgb(47, 47, 50)))
-                e.Graphics.FillRectangle(bg, e.Bounds);
-            using (var text = new SolidBrush(Color.FromArgb(235, 238, 244)))
-                e.Graphics.DrawString(((ComboBox)sender).Items[e.Index].ToString(), e.Font, text, e.Bounds.X + 8, e.Bounds.Y + 4);
+            else if (box == language)                          box.SelectedIndex = string.Equals(value, "en",        StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
 
         void SetupNumbers()
@@ -2002,6 +1983,77 @@ namespace AiUsageWebView2
         static string Escape(string value)
         {
             return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+    }
+
+    sealed class DarkComboBox : ComboBox
+    {
+        static readonly Color BgColor     = Color.FromArgb(26, 28, 38);
+        static readonly Color TextColor   = Color.FromArgb(210, 214, 226);
+        static readonly Color BorderColor = Color.FromArgb(48, 58, 80);
+        static readonly Color ArrowBg    = Color.FromArgb(32, 36, 52);
+        static readonly Color ArrowFg    = Color.FromArgb(120, 140, 175);
+        static readonly Color SelColor   = Color.FromArgb(30, 88, 160);
+
+        public DarkComboBox()
+        {
+            DrawMode      = DrawMode.OwnerDrawFixed;
+            DropDownStyle = ComboBoxStyle.DropDownList;
+            FlatStyle     = FlatStyle.Flat;
+            ItemHeight    = 22;
+            BackColor     = BgColor;
+            ForeColor     = TextColor;
+            DrawItem     += OnDrawItem;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0xF) // WM_PAINT
+                using (var g = Graphics.FromHwnd(Handle))
+                    PaintFace(g);
+        }
+
+        void PaintFace(Graphics g)
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            int w = Width, h = Height, aw = 26;
+
+            using (var b = new SolidBrush(BgColor))
+                g.FillRectangle(b, 0, 0, w, h);
+
+            if (SelectedIndex >= 0)
+            {
+                string text = Items[SelectedIndex].ToString();
+                using (var b = new SolidBrush(TextColor))
+                    g.DrawString(text, Font, b, 10, (h - Font.Height) / 2 - 1);
+            }
+
+            int ax = w - aw - 1;
+            using (var b = new SolidBrush(ArrowBg))
+                g.FillRectangle(b, ax + 1, 1, aw - 1, h - 2);
+            using (var p = new Pen(BorderColor))
+                g.DrawLine(p, ax, 1, ax, h - 2);
+
+            int cx = ax + aw / 2, cy = h / 2 + 1;
+            var pts = new[] { new Point(cx - 4, cy - 3), new Point(cx + 4, cy - 3), new Point(cx, cy + 2) };
+            using (var b = new SolidBrush(ArrowFg))
+                g.FillPolygon(b, pts);
+
+            using (var p = new Pen(BorderColor))
+                g.DrawRectangle(p, 0, 0, w - 1, h - 1);
+        }
+
+        static void OnDrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var box = (ComboBox)sender;
+            bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            using (var bg = new SolidBrush(sel ? SelColor : Color.FromArgb(22, 24, 34)))
+                e.Graphics.FillRectangle(bg, e.Bounds);
+            using (var tb = new SolidBrush(TextColor))
+                e.Graphics.DrawString(box.Items[e.Index].ToString(), e.Font, tb,
+                    e.Bounds.X + 10, e.Bounds.Y + (e.Bounds.Height - e.Font.Height) / 2);
         }
     }
 }
