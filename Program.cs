@@ -181,8 +181,27 @@ namespace Headroom
                 service.BoostUntil = null;
 
             int minutes = RefreshIntervalMinutes(service);
+            if (IsNearOrRecentReset(service.Data))
+                minutes = Math.Min(minutes, 1);
+
             if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= TimeSpan.FromMinutes(Math.Max(1, minutes)))
                 await RefreshServiceAsync(service, view, false);
+        }
+
+        static bool IsNearOrRecentReset(UsageData data)
+        {
+            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
+            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
+            if (!fiveEmpty && !weekEmpty) return false;
+
+            TimeSpan rem;
+            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset) &&
+                TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
+                return true;
+            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset) &&
+                TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
+                return true;
+            return false;
         }
 
         int RefreshIntervalMinutes(ServiceState service)
@@ -541,19 +560,27 @@ namespace Headroom
                 Invalidate();
                 return;
             }
-            if (key == "layout")
+            if (key == "token")
             {
-                bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
-                settings.LayoutMode = vertical ? "horizontal" : "vertical";
-                ApplyLayoutMinimumSize();
-                ApplyIdealSize();
+                bool next = !settings.ClaudeShowUsed;
+                settings.ClaudeShowUsed = next;
+                settings.CodexShowUsed  = next;
                 settings.Save();
                 Invalidate();
                 return;
             }
-            if (key == "settings")
+            if (key == "fiveReset")
             {
-                ShowSettingsDialog();
+                settings.FiveHourResetMode = string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
+                settings.Save();
+                Invalidate();
+                return;
+            }
+            if (key == "weekReset")
+            {
+                settings.WeeklyResetMode = string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
+                settings.Save();
+                Invalidate();
                 return;
             }
             if (key == "close")
@@ -576,8 +603,9 @@ namespace Headroom
         {
             if (key == "close") return T("閉じる", "Close");
             if (key == "pin") return T(settings.AlwaysOnTop ? "最前面を解除" : "最前面に固定", settings.AlwaysOnTop ? "Unpin from top" : "Always on top");
-            if (key == "layout") return string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase) ? T("横並びに切り替え", "Switch to horizontal") : T("縦並びに切り替え", "Switch to vertical");
-            if (key == "settings") return T("設定", "Settings");
+            if (key == "token") return T(settings.ClaudeShowUsed ? "残量表示に切り替え" : "使用量表示に切り替え", settings.ClaudeShowUsed ? "Switch to remaining" : "Switch to used");
+            if (key == "fiveReset") return T(string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "5時間リセット: カウントダウン→時刻表示" : "5時間リセット: 時刻→カウントダウン表示", string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "5h reset: countdown → clock time" : "5h reset: clock time → countdown");
+            if (key == "weekReset") return T(string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "週リセット: カウントダウン→時刻表示" : "週リセット: 時刻→カウントダウン表示", string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "Weekly reset: countdown → clock time" : "Weekly reset: clock time → countdown");
             if (key.EndsWith("-refresh")) return T("更新", "Refresh");
             if (key.EndsWith("-boost"))
             {
@@ -677,7 +705,6 @@ namespace Headroom
                 DrawService(g, visible[1].Item1, cardW + gap, y, cardW, contentH, visible[1].Item2);
             }
             DrawSideRail(g);
-            DrawResizeGrip(g);
         }
 
         List<Tuple<ServiceState, string>> VisibleServices()
@@ -718,20 +745,24 @@ namespace Headroom
 
         void DrawSideRail(Graphics g)
         {
-            int x = ClientSize.Width - 24;
-            int closeY    = 12;
-            int pinY      = 46;
-            int layoutY   = 80;
-            int settingsY = 114;
-            hits["close"]   = new Rectangle(x - 6, closeY    - 6, 28, 28);
-            hits["pin"]     = new Rectangle(x - 6, pinY      - 6, 28, 28);
-            hits["layout"]  = new Rectangle(x - 6, layoutY   - 6, 28, 28);
-            hits["settings"]= new Rectangle(x - 6, settingsY - 6, 28, 28);
+            int x        = ClientSize.Width - 24;
+            int closeY   = 6;
+            int pinY     = closeY + 28;
+            int tokenY   = pinY + 28;
+            int weekY    = ClientSize.Height - 12;
+            int fiveY    = weekY - 28;
 
-            DrawIconButton(g, "close",    x, closeY,    Color.FromArgb(160, 160, 165), DrawCloseIcon);
-            DrawIconButton(g, "pin",      x, pinY,      settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
-            DrawIconButton(g, "layout",   x, layoutY,   Color.FromArgb(110, 120, 140), DrawLayoutIcon);
-            DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(130, 130, 135), DrawGearIcon);
+            hits["close"]      = new Rectangle(x - 6, closeY  - 6, 28, 28);
+            hits["pin"]        = new Rectangle(x - 6, pinY    - 6, 28, 28);
+            hits["token"]      = new Rectangle(x - 6, tokenY  - 6, 28, 28);
+            hits["fiveReset"]  = new Rectangle(x - 6, fiveY   - 6, 28, 28);
+            hits["weekReset"]  = new Rectangle(x - 6, weekY   - 6, 28, 28);
+
+            DrawIconButton(g, "close",     x, closeY,  Color.FromArgb(160, 160, 165), DrawCloseIcon);
+            DrawIconButton(g, "pin",       x, pinY,    settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "token",     x, tokenY,  Color.FromArgb(130, 145, 165), DrawTokenToggleIcon);
+            DrawIconButton(g, "fiveReset", x, fiveY,   Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
+            DrawIconButton(g, "weekReset", x, weekY,   Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
         }
 
         delegate void IconPainter(Graphics g, Rectangle r, Color color);
@@ -1368,6 +1399,64 @@ namespace Headroom
                 using (var hlPath = RoundRect(x + 1, y + 1, Math.Max(4, fillW - 2), barH / 2, barH / 4))
                 using (var hl = new SolidBrush(Color.FromArgb(45, 255, 255, 255)))
                     g.FillPath(hl, hlPath);
+            }
+        }
+
+        void DrawTokenToggleIcon(Graphics g, Rectangle r, Color color)
+        {
+            bool showUsed = settings.ClaudeShowUsed;
+            string text = showUsed ? T("使", "U") : T("残", "R");
+            using (var f = new Font("Segoe UI", 9f, FontStyle.Bold))
+            using (var br = new SolidBrush(color))
+            {
+                SizeF sz = g.MeasureString(text, f);
+                g.DrawString(text, f, br, r.X + (r.Width - sz.Width) / 2f, r.Y + (r.Height - sz.Height) / 2f);
+            }
+        }
+
+        void DrawFiveResetIcon(Graphics g, Rectangle r, Color color)
+        {
+            bool isRelative = string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase);
+            int cx = r.X + r.Width / 2;
+            int cr = 6;
+            int cy = r.Y + cr + 1;
+            using (var pen = new Pen(color, 1.3f))
+            {
+                g.DrawEllipse(pen, cx - cr, cy - cr, cr * 2, cr * 2);
+                if (isRelative)
+                    g.DrawLine(pen, cx, cy, cx, cy - cr + 2);
+                else
+                    g.DrawLine(pen, cx, cy, cx + cr - 2, cy);
+            }
+            using (var f = new Font("Segoe UI", 6.5f, FontStyle.Bold))
+            using (var br = new SolidBrush(color))
+            {
+                string label = "5h";
+                SizeF sz = g.MeasureString(label, f);
+                g.DrawString(label, f, br, cx - sz.Width / 2f, r.Bottom - sz.Height);
+            }
+        }
+
+        void DrawWeekResetIcon(Graphics g, Rectangle r, Color color)
+        {
+            bool isRelative = string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase);
+            int cx = r.X + r.Width / 2;
+            int cr = 6;
+            int cy = r.Y + cr + 1;
+            using (var pen = new Pen(color, 1.3f))
+            {
+                g.DrawEllipse(pen, cx - cr, cy - cr, cr * 2, cr * 2);
+                if (isRelative)
+                    g.DrawLine(pen, cx, cy, cx, cy - cr + 2);
+                else
+                    g.DrawLine(pen, cx, cy, cx + cr - 2, cy);
+            }
+            using (var f = new Font("Segoe UI", 6f, FontStyle.Bold))
+            using (var br = new SolidBrush(color))
+            {
+                string label = T("週", "Wk");
+                SizeF sz = g.MeasureString(label, f);
+                g.DrawString(label, f, br, cx - sz.Width / 2f, r.Bottom - sz.Height);
             }
         }
 
