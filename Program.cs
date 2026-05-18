@@ -1298,6 +1298,7 @@ namespace AiUsageWebView2
         readonly WidgetSettings original;
         readonly Action preview;
         readonly ToolTip tooltips = new ToolTip();
+        bool _updatingLanguage;
 
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int sz);
@@ -1343,6 +1344,7 @@ namespace AiUsageWebView2
             var title = new Label
             {
                 Text = T("設定", "Settings"),
+                Tag = "設定|Settings",
                 Location = new Point(28, 16),
                 Width = 300,
                 Height = 26,
@@ -1351,10 +1353,10 @@ namespace AiUsageWebView2
             };
             Controls.Add(title);
 
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 14), Width = 96, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 9f) };
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel", DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 14), Width = 96, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 9f) };
             cancel.FlatAppearance.BorderColor = Color.FromArgb(52, 52, 58);
             cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(44, 44, 50);
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 114, 14), Width = 90, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold) };
+            var ok = new Button { Text = T("保存", "Save"), Tag = "保存|Save", DialogResult = DialogResult.OK, Location = new Point(Width - 114, 14), Width = 90, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold) };
             ok.FlatAppearance.BorderColor = Color.FromArgb(45, 132, 235);
             ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 152, 250);
             ok.Click += (s, e) => ApplyToSettings();
@@ -1370,37 +1372,38 @@ namespace AiUsageWebView2
             Controls.Add(rightCard);
 
             int leftY = 12;
-            AddSection(leftCard, T("表示", "Display"), ref leftY);
-            AddRow(leftCard, T("表示するサービス", "Visible services"), T("使っているサービスだけを表示します。", "Choose services to show."), ServicePicker(), ref leftY);
-            AddRow(leftCard, T("配置", "Layout"), T("2つのサービスの並べ方です。", "Arrange two service cards."), layoutMode, ref leftY);
-            AddRow(leftCard, "Codex " + T("表示", "display"), T("Codexを残量または使用量で表示します。", "Show Codex as remaining or used."), codexMode, ref leftY);
-            AddRow(leftCard, "Claude " + T("表示", "display"), T("Claudeを残量または使用量で表示します。", "Show Claude as remaining or used."), claudeMode, ref leftY);
-            AddRow(leftCard, T("5時間リセット", "5h reset"), T("5時間枠のリセット表示です。", "Display for 5-hour reset."), fiveResetMode, ref leftY);
-            AddRow(leftCard, T("週リセット", "Weekly reset"), T("週間枠のリセット表示です。", "Display for weekly reset."), weeklyResetMode, ref leftY);
-
-            AddSection(leftCard, T("一般", "General"), ref leftY);
-            AddRow(leftCard, T("言語", "Language"), T("表示言語です。", "Display language."), language, ref leftY);
+            AddSection(leftCard, "一般", "General", ref leftY);
+            AddRow(leftCard, "Language", "Language", "表示言語です。", "Display language.", language, ref leftY);
             topMost.Text = T("有効", "Enabled");
+            topMost.Tag = "有効|Enabled";
             topMost.Checked = settings.AlwaysOnTop;
             topMost.Width = 180;
             topMost.Height = 30;
             StylePillCheck(topMost);
-            AddRow(leftCard, T("最前面に固定", "Always on top"), T("他のウィンドウより前に表示します。", "Keep above other windows."), topMost, ref leftY);
+            AddRow(leftCard, "最前面に固定", "Always on top", "他のウィンドウより前に表示します。", "Keep above other windows.", topMost, ref leftY);
+
+            AddSection(leftCard, "レイアウト", "Layout", ref leftY);
+            AddRow(leftCard, "表示するサービス", "Visible services", "使っているサービスだけを表示します。", "Choose services to show.", ServicePicker(), ref leftY);
+            AddRow(leftCard, "配置", "Arrangement", "2つのサービスの並べ方です。", "Arrange two service cards.", layoutMode, ref leftY);
+            AddRow(leftCard, "Codex 表示", "Codex display", "Codexを残量または使用量で表示します。", "Show Codex as remaining or used.", codexMode, ref leftY);
+            AddRow(leftCard, "Claude 表示", "Claude display", "Claudeを残量または使用量で表示します。", "Show Claude as remaining or used.", claudeMode, ref leftY);
+            AddRow(leftCard, "5時間リセット", "5h reset", "5時間枠のリセット表示です。", "Display for 5-hour reset.", fiveResetMode, ref leftY);
+            AddRow(leftCard, "週リセット", "Weekly reset", "週間枠のリセット表示です。", "Display for weekly reset.", weeklyResetMode, ref leftY);
 
             int rightY = 12;
-            AddSection(rightCard, T("更新", "Refresh"), ref rightY);
-            AddRow(rightCard, T("通常更新間隔", "Normal refresh"), T("ブーストしていない時の更新間隔です。", "Refresh interval when boost is off."), normal, ref rightY);
-            AddRow(rightCard, T("ブースト時間", "Boost duration"), T("高頻度更新を続ける時間です。", "How long boost stays on."), boostDuration, ref rightY);
-            AddRow(rightCard, T("ブースト更新間隔", "Boost refresh"), T("ブースト中の更新間隔です。", "Refresh interval while boosted."), boostInterval, ref rightY);
-            AddRow(rightCard, T("直前更新開始", "Final window"), T("リセット直前に更新を速める時間です。", "Start faster refresh before reset."), finalWindow, ref rightY);
-            AddRow(rightCard, T("直前更新間隔", "Final interval"), T("リセット直前の更新間隔です。", "Refresh interval near reset."), finalInterval, ref rightY);
+            AddSection(rightCard, "更新", "Refresh", ref rightY);
+            AddRow(rightCard, "通常更新間隔", "Normal refresh", "ブーストしていない時の更新間隔です。", "Refresh interval when boost is off.", normal, ref rightY);
+            AddRow(rightCard, "ブースト時間", "Boost duration", "高頻度更新を続ける時間です。", "How long boost stays on.", boostDuration, ref rightY);
+            AddRow(rightCard, "ブースト更新間隔", "Boost refresh", "ブースト中の更新間隔です。", "Refresh interval while boosted.", boostInterval, ref rightY);
+            AddRow(rightCard, "直前更新開始", "Final window", "リセット直前に更新を速める時間です。", "Start faster refresh before reset.", finalWindow, ref rightY);
+            AddRow(rightCard, "直前更新間隔", "Final interval", "リセット直前の更新間隔です。", "Refresh interval near reset.", finalInterval, ref rightY);
 
-            AddSection(rightCard, T("見た目", "Appearance"), ref rightY);
-            AddRow(rightCard, T("ラベル文字", "Label text"), T("5時間・週などの文字サイズです。", "Font size for row labels."), labelSize, ref rightY);
-            AddRow(rightCard, T("パーセント文字", "Percent text"), T("残量・使用量の数字サイズです。", "Font size for percentage values."), percentSize, ref rightY);
-            AddRow(rightCard, T("リセット文字", "Reset text"), T("リセット表示の文字サイズです。", "Font size for reset text."), resetSize, ref rightY);
-            AddNumberWithColor(rightCard, T("黄色になる残量", "Yellow threshold"), T("この残量以下で黄色表示にします。", "Turn yellow at or below this percent."), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
-            AddNumberWithColor(rightCard, T("赤になる残量", "Red threshold"), T("この残量以下で赤表示にします。", "Turn red at or below this percent."), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
+            AddSection(rightCard, "見た目", "Appearance", ref rightY);
+            AddRow(rightCard, "ラベル文字", "Label text", "5時間・週などの文字サイズです。", "Font size for row labels.", labelSize, ref rightY);
+            AddRow(rightCard, "パーセント文字", "Percent text", "残量・使用量の数字サイズです。", "Font size for percentage values.", percentSize, ref rightY);
+            AddRow(rightCard, "リセット文字", "Reset text", "リセット表示の文字サイズです。", "Font size for reset text.", resetSize, ref rightY);
+            AddNumberWithColor(rightCard, "黄色になる残量", "Yellow threshold", "この残量以下で黄色表示にします。", "Turn yellow at or below this percent.", warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, "赤になる残量", "Red threshold", "この残量以下で赤表示にします。", "Turn red at or below this percent.", criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -1467,29 +1470,30 @@ namespace AiUsageWebView2
             }
         }
 
-        void AddSection(Panel parent, string text, ref int y)
+        void AddSection(Panel parent, string ja, string en, ref int y)
         {
             y += 10;
             var bar = new Panel { Location = new Point(24, y + 2), Width = 3, Height = 14, BackColor = Color.FromArgb(45, 132, 235) };
             parent.Controls.Add(bar);
             var label = new Label
             {
-                Text = text,
+                Text = T(ja, en),
+                Tag = ja + "|" + en,
                 Location = new Point(34, y),
                 Width = 240,
                 Height = 20,
-                Font = new Font("Yu Gothic UI", 8.2f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(148, 154, 180)
+                Font = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(168, 174, 200)
             };
             parent.Controls.Add(label);
             y += 28;
         }
 
-        void AddRow(Panel parent, string title, string description, Control control, ref int y)
+        void AddRow(Panel parent, string titleJa, string titleEn, string descJa, string descEn, Control control, ref int y)
         {
             int rowH = 50;
-            var titleLabel = new Label { Text = title, Location = new Point(24, y + 9), Width = 210, Height = 20, Font = new Font("Yu Gothic UI", 9.2f), ForeColor = Color.FromArgb(210, 214, 226) };
-            var descLabel = new Label { Text = description, Location = new Point(24, y + 28), Width = 210, Height = 17, Font = new Font("Yu Gothic UI", 7.8f), ForeColor = Color.FromArgb(96, 104, 120) };
+            var titleLabel = new Label { Text = T(titleJa, titleEn), Tag = titleJa + "|" + titleEn, Location = new Point(24, y + 9), Width = 210, Height = 20, Font = new Font("Yu Gothic UI", 9.2f), ForeColor = Color.FromArgb(210, 214, 226) };
+            var descLabel = new Label { Text = T(descJa, descEn), Tag = descJa + "|" + descEn, Location = new Point(24, y + 28), Width = 210, Height = 17, Font = new Font("Yu Gothic UI", 7.8f), ForeColor = Color.FromArgb(96, 104, 120) };
             control.Location = new Point(parent.Width - 200, y + 11);
             parent.Controls.Add(titleLabel);
             parent.Controls.Add(descLabel);
@@ -1549,7 +1553,7 @@ namespace AiUsageWebView2
             };
         }
 
-        void AddNumberWithColor(Panel parent, string title, string description, TextBox box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
+        void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
         {
             var panel = new Panel { Width = 190, Height = 34, BackColor = Color.Transparent };
             StyleNumber(box, value, min, max);
@@ -1561,12 +1565,12 @@ namespace AiUsageWebView2
             StyleTextBox(colorBox);
             panel.Controls.Add(box);
             panel.Controls.Add(colorBox);
-            AddRow(parent, title, description, panel, ref y);
+            AddRow(parent, titleJa, titleEn, descJa, descEn, panel, ref y);
         }
 
         void SetupCombo(DarkComboBox box, string value, string[] items)
         {
-            box.Font = new Font("Yu Gothic UI", 9f);
+            box.Font = new Font("Yu Gothic UI", 9.5f);
             box.Width = 175;
             box.Items.Clear();
             box.Items.AddRange(items);
@@ -1619,11 +1623,26 @@ namespace AiUsageWebView2
         {
             EventHandler apply = (s, e) =>
             {
+                if (_updatingLanguage) return;
                 ApplyToSettings();
                 preview();
             };
+            EventHandler applyLanguage = (s, e) =>
+            {
+                if (_updatingLanguage) return;
+                _updatingLanguage = true;
+                try
+                {
+                    ApplyToSettings();
+                    bool en = string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase);
+                    ReloadComboItems();
+                    UpdateTaggedControls(this, en);
+                    preview();
+                }
+                finally { _updatingLanguage = false; }
+            };
             normal.TextChanged += apply;
-            language.SelectedIndexChanged += apply;
+            language.SelectedIndexChanged += applyLanguage;
             boostDuration.TextChanged += apply;
             boostInterval.TextChanged += apply;
             finalWindow.TextChanged += apply;
@@ -1643,6 +1662,51 @@ namespace AiUsageWebView2
             topMost.CheckedChanged += apply;
             warningColor.TextChanged += apply;
             criticalColor.TextChanged += apply;
+        }
+
+        void ReloadComboItems()
+        {
+            int layoutSel = layoutMode.SelectedIndex;
+            int codexSel  = codexMode.SelectedIndex;
+            int claudeSel = claudeMode.SelectedIndex;
+            int fiveSel   = fiveResetMode.SelectedIndex;
+            int weeklySel = weeklyResetMode.SelectedIndex;
+
+            layoutMode.Items.Clear();
+            layoutMode.Items.AddRange(new[] { T("横", "Wide"), T("縦", "Tall") });
+            layoutMode.SelectedIndex = Math.Max(0, Math.Min(1, layoutSel));
+
+            codexMode.Items.Clear();
+            codexMode.Items.AddRange(new[] { T("残量", "Remaining"), T("使用量", "Used") });
+            codexMode.SelectedIndex = Math.Max(0, Math.Min(1, codexSel));
+
+            claudeMode.Items.Clear();
+            claudeMode.Items.AddRange(new[] { T("残量", "Remaining"), T("使用量", "Used") });
+            claudeMode.SelectedIndex = Math.Max(0, Math.Min(1, claudeSel));
+
+            fiveResetMode.Items.Clear();
+            fiveResetMode.Items.AddRange(new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
+            fiveResetMode.SelectedIndex = Math.Max(0, Math.Min(1, fiveSel));
+
+            weeklyResetMode.Items.Clear();
+            weeklyResetMode.Items.AddRange(new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
+            weeklyResetMode.SelectedIndex = Math.Max(0, Math.Min(1, weeklySel));
+        }
+
+        void UpdateTaggedControls(Control parent, bool en)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                var tag = c.Tag as string;
+                if (tag != null)
+                {
+                    int pipe = tag.IndexOf('|');
+                    if (pipe >= 0)
+                        c.Text = en ? tag.Substring(pipe + 1) : tag.Substring(0, pipe);
+                }
+                if (c.Controls.Count > 0)
+                    UpdateTaggedControls(c, en);
+            }
         }
 
         void ApplyToSettings()
@@ -1998,7 +2062,7 @@ namespace AiUsageWebView2
             DrawMode      = DrawMode.OwnerDrawFixed;
             DropDownStyle = ComboBoxStyle.DropDownList;
             FlatStyle     = FlatStyle.Flat;
-            ItemHeight    = 22;
+            ItemHeight    = 24;
             BackColor     = BgColor;
             ForeColor     = TextColor;
             DrawItem     += OnDrawItem;
