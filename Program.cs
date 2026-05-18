@@ -30,6 +30,8 @@ namespace AiUsageWebView2
 
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+        [DllImport("user32.dll", EntryPoint = "SendMessage")]
+        static extern IntPtr SendMessageIcon(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         const int WmNcLButtonDown = 0xA1;
         const int HtCaption = 0x2;
 
@@ -49,6 +51,9 @@ namespace AiUsageWebView2
         Size resizeStartSize;
         string hoverKey = "";
         int spinnerFrame;
+        const float LabelFontSize   = 10.8f;
+        const float PercentFontSize = 16.5f;
+        const float ResetFontSize   =  9.9f;
         bool English
         {
             get { return string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase); }
@@ -67,11 +72,6 @@ namespace AiUsageWebView2
             DoubleBuffered = true;
             KeyPreview = true;
             ShowInTaskbar = true;
-            try
-            {
-                Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            }
-            catch { }
 
             foreach (var view in new[] { claudeView, codexView })
             {
@@ -709,9 +709,9 @@ namespace AiUsageWebView2
                 g.FillEllipse(dotBrush, x + 16, y + 17, 8, 8);
 
             using (var title = new Font("Segoe UI", 13f, FontStyle.Bold))
-            using (var label = new Font("Segoe UI", settings.LabelFontSize, FontStyle.Regular))
-            using (var reset = new Font("Segoe UI", settings.ResetFontSize, FontStyle.Regular))
-            using (var num = new Font("Segoe UI", settings.PercentFontSize, FontStyle.Bold))
+            using (var label = new Font("Segoe UI", LabelFontSize, FontStyle.Regular))
+            using (var reset = new Font("Segoe UI", ResetFontSize, FontStyle.Regular))
+            using (var num = new Font("Segoe UI", PercentFontSize, FontStyle.Bold))
             using (var white = new SolidBrush(Color.FromArgb(240, 242, 245)))
             using (var muted = new SolidBrush(Color.FromArgb(170, 175, 185)))
             using (var dim = new SolidBrush(Color.FromArgb(140, 145, 155)))
@@ -732,9 +732,9 @@ namespace AiUsageWebView2
                     return;
                 }
 
-                int contentTop = y + Math.Max(44, (int)Math.Ceiling(settings.PercentFontSize + 24));
+                int contentTop = y + Math.Max(44, (int)Math.Ceiling(PercentFontSize + 24));
                 int contentBottom = y + h - 10;
-                int rowHeight = Math.Max(32, (int)Math.Ceiling(Math.Max(settings.PercentFontSize * 1.55, settings.LabelFontSize + settings.ResetFontSize + 14)));
+                int rowHeight = Math.Max(32, (int)Math.Ceiling(Math.Max(PercentFontSize * 1.55, LabelFontSize + ResetFontSize + 14)));
                 int totalRows = rowHeight * 2;
                 int free = Math.Max(0, contentBottom - contentTop - totalRows);
                 int topPad = free / 2;
@@ -855,11 +855,11 @@ namespace AiUsageWebView2
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
-            g.DrawString(empty ? "--" : pct.Value + "%", numFont, pctBrush, percentX, y - 4);
-
-            int pctWidth = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
-            int barX = percentX + pctWidth + 6;
-            int barY = y + Math.Max(5, (int)Math.Round(settings.PercentFontSize * 0.42));
+            string pctStr = empty ? "--" : pct.Value + "%";
+            g.DrawString(pctStr, numFont, pctBrush, percentX, y - 4);
+            int pctWidth = Math.Max(28, (int)g.MeasureString(pctStr, numFont).Width - 5);
+            int barX = percentX + pctWidth + 4;
+            int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, pct, rowColor);
 
@@ -868,9 +868,9 @@ namespace AiUsageWebView2
             {
                 if (atLimit)
                     using (var boldReset = new Font(resetFont, FontStyle.Bold))
-                        g.DrawString(reset, boldReset, white, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
+                        g.DrawString(reset, boldReset, white, barX, y + Math.Max(18, (int)Math.Round(PercentFontSize * 1.0)));
                 else
-                    g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
+                    g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(PercentFontSize * 1.0)));
             }
             }
         }
@@ -880,9 +880,9 @@ namespace AiUsageWebView2
             if (!pct.HasValue) return normal;
             int remaining = showUsed ? 100 - pct.Value : pct.Value;
             if (remaining <= settings.CriticalRemainingPercent)
-                return settings.ParseColor(settings.CriticalColor, Color.FromArgb(224, 73, 73));
+                return Color.FromArgb(224, 73, 73);
             if (remaining <= settings.WarningRemainingPercent)
-                return settings.ParseColor(settings.WarningColor, Color.FromArgb(232, 169, 36));
+                return Color.FromArgb(232, 169, 36);
             return normal;
         }
 
@@ -1335,6 +1335,21 @@ namespace AiUsageWebView2
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, name), text ?? "");
         }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try
+            {
+                Icon rawIco = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                Icon = rawIco;
+                Icon icoSmall = new Icon(rawIco, 16, 16);
+                Icon icoBig   = new Icon(rawIco, 48, 48);
+                SendMessageIcon(Handle, 0x80, new IntPtr(0), icoSmall.Handle);
+                SendMessageIcon(Handle, 0x80, new IntPtr(1), icoBig.Handle);
+            }
+            catch { }
+        }
     }
 
     sealed class SettingsForm : Form
@@ -1364,9 +1379,6 @@ namespace AiUsageWebView2
         readonly DarkComboBox topMost   = new DarkComboBox();
         readonly DarkComboBox showCodex  = new DarkComboBox();
         readonly DarkComboBox showClaude = new DarkComboBox();
-        readonly DarkTextBox labelSize = new DarkTextBox();
-        readonly DarkTextBox percentSize = new DarkTextBox();
-        readonly DarkTextBox resetSize = new DarkTextBox();
         readonly DarkTextBox warningPercent = new DarkTextBox();
         readonly DarkTextBox criticalPercent = new DarkTextBox();
 
@@ -1423,34 +1435,29 @@ namespace AiUsageWebView2
             body.Controls.Add(rightCard);
 
             int leftY = 12;
-            AddSection(leftCard, "一般", "General", ref leftY);
-            AddRow(leftCard, "Language", "Language", "", "", language, ref leftY);
-            SetupCombo(topMost, settings.AlwaysOnTop ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
-            AddRow(leftCard, "最前面に固定", "Always on top", "", "", topMost, ref leftY);
-
-            AddSection(leftCard, "レイアウト", "Layout", ref leftY);
-            SetupCombo(showCodex,  settings.ShowCodex  ? "show" : "hide", new[] { T("表示", "Show"), T("非表示", "Hide") });
-            SetupCombo(showClaude, settings.ShowClaude ? "show" : "hide", new[] { T("表示", "Show"), T("非表示", "Hide") });
-            AddRow(leftCard, "Codex", "Codex", "", "", showCodex,  ref leftY);
-            AddRow(leftCard, "Claude", "Claude", "", "", showClaude, ref leftY);
-            AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
-            AddRow(leftCard, "Codex", "Codex", "残量 / 使用量 のどちらを表示するか", "which value to display", codexMode, ref leftY);
-            AddRow(leftCard, "Claude", "Claude", "残量 / 使用量 のどちらを表示するか", "which value to display", claudeMode, ref leftY);
-            AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
-            AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
+            AddSection(leftCard, "更新", "Refresh", ref leftY);
+            AddRow(leftCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref leftY);
+            AddRow(leftCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref leftY);
+            AddRow(leftCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref leftY);
+            AddSection(leftCard, "閾値", "Thresholds", ref leftY);
+            AddNumberWithColor(leftCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref leftY, 1, 99);
+            AddNumberWithColor(leftCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref leftY, 1, 99);
 
             int rightY = 12;
-            AddSection(rightCard, "更新", "Refresh", ref rightY);
-            AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
-            AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
-            AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
-
-            AddSection(rightCard, "見た目", "Appearance", ref rightY);
-            AddRow(rightCard, "ラベル文字サイズ", "Label font size", "", "", labelSize, ref rightY);
-            AddRow(rightCard, "パーセント文字サイズ", "Percent font size", "", "", percentSize, ref rightY);
-            AddRow(rightCard, "リセット表示文字サイズ", "Reset text size", "", "", resetSize, ref rightY);
-            AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref rightY, 1, 99);
-            AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref rightY, 1, 99);
+            AddSection(rightCard, "一般", "General", ref rightY);
+            AddRow(rightCard, "Language", "Language", "", "", language, ref rightY);
+            SetupCombo(topMost, settings.AlwaysOnTop ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
+            AddRow(rightCard, "最前面に固定", "Always on top", "", "", topMost, ref rightY);
+            SetupCombo(showCodex,  settings.ShowCodex  ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
+            SetupCombo(showClaude, settings.ShowClaude ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
+            AddRow(rightCard, "Codex", "Codex", "", "", showCodex,  ref rightY);
+            AddRow(rightCard, "Claude", "Claude", "", "", showClaude, ref rightY);
+            AddSection(rightCard, "レイアウト", "Layout", ref rightY);
+            AddRow(rightCard, "配置", "Arrangement", "", "", layoutMode, ref rightY);
+            AddRow(rightCard, "Codex 数値", "Codex value", "残量 / 使用量", "remaining / used", codexMode, ref rightY);
+            AddRow(rightCard, "Claude 数値", "Claude value", "残量 / 使用量", "remaining / used", claudeMode, ref rightY);
+            AddRow(rightCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref rightY);
+            AddRow(rightCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref rightY);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -1646,7 +1653,7 @@ namespace AiUsageWebView2
             else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == topMost)                           box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-            else if (box == showCodex || box == showClaude)   box.SelectedIndex = string.Equals(value, "show",      StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            else if (box == showCodex || box == showClaude)   box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == language)                          box.SelectedIndex = string.Equals(value, "en",        StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
 
@@ -1655,9 +1662,6 @@ namespace AiUsageWebView2
             StyleNumber(normal, settings.NormalIntervalMinutes, 1, 240);
             StyleNumber(boostDuration, settings.BoostDurationMinutes, 1, 240);
             StyleNumber(boostInterval, settings.BoostIntervalMinutes, 1, 240);
-            StyleNumber(labelSize, (int)Math.Round(settings.LabelFontSize), 6, 32);
-            StyleNumber(percentSize, (int)Math.Round(settings.PercentFontSize), 8, 42);
-            StyleNumber(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
         }
 
         void StyleNumber(TextBox box, int value, int min, int max)
@@ -1720,9 +1724,6 @@ namespace AiUsageWebView2
             claudeMode.SelectedIndexChanged += apply;
             fiveResetMode.SelectedIndexChanged += apply;
             weeklyResetMode.SelectedIndexChanged += apply;
-            labelSize.TextChanged += apply;
-            percentSize.TextChanged += apply;
-            resetSize.TextChanged += apply;
             warningPercent.TextChanged += apply;
             criticalPercent.TextChanged += apply;
             topMost.SelectedIndexChanged += apply;
@@ -1764,11 +1765,11 @@ namespace AiUsageWebView2
             topMost.SelectedIndex = Math.Max(0, Math.Min(1, topMostSel));
 
             showCodex.Items.Clear();
-            showCodex.Items.AddRange(new[] { T("表示", "Show"), T("非表示", "Hide") });
+            showCodex.Items.AddRange(new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             showCodex.SelectedIndex = Math.Max(0, Math.Min(1, showCxSel));
 
             showClaude.Items.Clear();
-            showClaude.Items.AddRange(new[] { T("表示", "Show"), T("非表示", "Hide") });
+            showClaude.Items.AddRange(new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             showClaude.SelectedIndex = Math.Max(0, Math.Min(1, showClSel));
         }
 
@@ -1802,9 +1803,6 @@ namespace AiUsageWebView2
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
             settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "relative" : "time";
             settings.WeeklyResetMode   = weeklyResetMode.SelectedIndex == 1 ? "relative" : "time";
-            settings.LabelFontSize = ReadBoxInt(labelSize, (int)Math.Round(settings.LabelFontSize), 6, 32);
-            settings.PercentFontSize = ReadBoxInt(percentSize, (int)Math.Round(settings.PercentFontSize), 8, 42);
-            settings.ResetFontSize = ReadBoxInt(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
             int warning = ReadBoxInt(warningPercent, settings.WarningRemainingPercent, 1, 99);
             int critical = ReadBoxInt(criticalPercent, settings.CriticalRemainingPercent, 1, 99);
             settings.WarningRemainingPercent = Math.Max(critical, warning);
@@ -1817,13 +1815,6 @@ namespace AiUsageWebView2
             return string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase) ? en : ja;
         }
 
-        static string NormalizeColorText(string value, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return fallback;
-            var text = value.Trim();
-            if (!text.StartsWith("#")) text = "#" + text;
-            return Regex.IsMatch(text, "^#[0-9a-fA-F]{6}$") ? text.ToUpperInvariant() : fallback;
-        }
     }
 
     sealed class ServiceState
@@ -1933,13 +1924,8 @@ namespace AiUsageWebView2
         public bool ClaudeShowUsed = false;
         public string FiveHourResetMode = "relative";
         public string WeeklyResetMode = "time";
-        public float LabelFontSize = 10.8f;
-        public float PercentFontSize = 16.5f;
-        public float ResetFontSize = 9.9f;
         public int WarningRemainingPercent = 50;
         public int CriticalRemainingPercent = 30;
-        public string WarningColor = "#E8A924";
-        public string CriticalColor = "#E04949";
 
         static string SettingsPath
         {
@@ -1971,13 +1957,8 @@ namespace AiUsageWebView2
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
                 s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
                 s.WeeklyResetMode = NormalizeResetMode(ReadString(json, "weeklyResetMode", s.WeeklyResetMode));
-                s.LabelFontSize = ReadFloat(json, "labelFontSize", s.LabelFontSize);
-                s.PercentFontSize = ReadFloat(json, "percentFontSize", s.PercentFontSize);
-                s.ResetFontSize = ReadFloat(json, "resetFontSize", s.ResetFontSize);
                 s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
                 s.CriticalRemainingPercent = ReadInt(json, "criticalRemainingPercent", s.CriticalRemainingPercent);
-                s.WarningColor = ReadString(json, "warningColor", s.WarningColor);
-                s.CriticalColor = ReadString(json, "criticalColor", s.CriticalColor);
             }
             catch { }
             return s;
@@ -2006,13 +1987,8 @@ namespace AiUsageWebView2
             ClaudeShowUsed = other.ClaudeShowUsed;
             FiveHourResetMode = other.FiveHourResetMode;
             WeeklyResetMode = other.WeeklyResetMode;
-            LabelFontSize = other.LabelFontSize;
-            PercentFontSize = other.PercentFontSize;
-            ResetFontSize = other.ResetFontSize;
             WarningRemainingPercent = other.WarningRemainingPercent;
             CriticalRemainingPercent = other.CriticalRemainingPercent;
-            WarningColor = other.WarningColor;
-            CriticalColor = other.CriticalColor;
         }
 
         public void Save()
@@ -2036,32 +2012,11 @@ namespace AiUsageWebView2
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
                     "  \"weeklyResetMode\": \"" + Escape(WeeklyResetMode) + "\",\r\n" +
-                    "  \"labelFontSize\": " + FormatFloat(LabelFontSize) + ",\r\n" +
-                    "  \"percentFontSize\": " + FormatFloat(PercentFontSize) + ",\r\n" +
-                    "  \"resetFontSize\": " + FormatFloat(ResetFontSize) + ",\r\n" +
                     "  \"warningRemainingPercent\": " + WarningRemainingPercent + ",\r\n" +
-                    "  \"criticalRemainingPercent\": " + CriticalRemainingPercent + ",\r\n" +
-                    "  \"warningColor\": \"" + Escape(WarningColor) + "\",\r\n" +
-                    "  \"criticalColor\": \"" + Escape(CriticalColor) + "\"\r\n" +
+                    "  \"criticalRemainingPercent\": " + CriticalRemainingPercent + "\r\n" +
                     "}\r\n");
             }
             catch { }
-        }
-
-        public Color ParseColor(string value, Color fallback)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(value)) return fallback;
-                var m = Regex.Match(value.Trim(), "^#?([0-9a-fA-F]{6})$");
-                if (!m.Success) return fallback;
-                int rgb = Convert.ToInt32(m.Groups[1].Value, 16);
-                return Color.FromArgb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
-            }
-            catch
-            {
-                return fallback;
-            }
         }
 
         static int ReadInt(string json, string key, int fallback)
@@ -2079,14 +2034,6 @@ namespace AiUsageWebView2
             return string.Equals(m.Groups[1].Value, "true", StringComparison.OrdinalIgnoreCase);
         }
 
-        static float ReadFloat(string json, string key, float fallback)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)");
-            if (!m.Success) return fallback;
-            float value;
-            return float.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value) ? value : fallback;
-        }
-
         static string ReadString(string json, string key, string fallback)
         {
             var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
@@ -2102,11 +2049,6 @@ namespace AiUsageWebView2
         static string NormalizeLayoutMode(string value)
         {
             return string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
-        }
-
-        static string FormatFloat(float value)
-        {
-            return value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         static string Escape(string value)
