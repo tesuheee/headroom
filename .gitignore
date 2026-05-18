@@ -2,6 +2,7 @@ packages/
 bin/
 obj/
 releases/
+design/
 .vs/
 *.zip
 *.nupkg
