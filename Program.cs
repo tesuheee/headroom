@@ -759,7 +759,7 @@ namespace Headroom
             bool exhausted = quotaExhausted || (state.Data.HitLimit && !fiveRemain.HasValue && !weekRemain.HasValue);
             bool stale = state.LastRefresh != DateTime.MinValue &&
                 DateTime.Now - state.LastRefresh > TimeSpan.FromMinutes(Math.Max(2, settings.NormalIntervalMinutes * 2));
-            Color accent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
+            Color cardAccent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
 
             // Card with gradient background
             using (var path = RoundRect(x, y, w, h, 12))
@@ -779,7 +779,7 @@ namespace Headroom
                 g.DrawPath(border, path);
 
             // Accent indicator dot
-            using (var dotBrush = new SolidBrush(accent))
+            using (var dotBrush = new SolidBrush(cardAccent))
                 g.FillEllipse(dotBrush, x + 16, y + 17, 8, 8);
 
             using (var title = new Font("Segoe UI", 13f, FontStyle.Bold))
@@ -815,8 +815,8 @@ namespace Headroom
                 int rowGap = Math.Max(2, Math.Min(10, free / 4));
                 int firstY = contentTop + topPad;
                 int secondY = firstY + rowHeight + rowGap;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, accent, label, reset, num, white, muted, dim);
-                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, state.Accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim);
             }
         }
 
