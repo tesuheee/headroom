@@ -363,7 +363,7 @@ namespace AiUsageWebView2
         {
             if (string.IsNullOrWhiteSpace(text)) return false;
             return Regex.IsMatch(text,
-                @"上限に達しました|上限に近づいています|制限に達しました|You'?ve reached.{0,20}limit|limit reached|approaching.{0,20}limit|at capacity",
+                @"上限に達しました|制限に達しました|You'?ve reached.{0,20}limit|limit reached|at capacity",
                 RegexOptions.IgnoreCase);
         }
 
@@ -652,7 +652,8 @@ namespace AiUsageWebView2
             bool showUsed = state.Name == "Codex" ? settings.CodexShowUsed : settings.ClaudeShowUsed;
             int? fiveRemain = state.Data.FiveHourRemainingPercent();
             int? weekRemain = state.Data.WeeklyRemainingPercent();
-            bool exhausted = state.Data.HitLimit || (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
+            bool quotaExhausted = (fiveRemain.HasValue && fiveRemain.Value <= 0) || (weekRemain.HasValue && weekRemain.Value <= 0);
+            bool exhausted = quotaExhausted || (state.Data.HitLimit && !fiveRemain.HasValue && !weekRemain.HasValue);
             bool stale = state.LastRefresh != DateTime.MinValue &&
                 DateTime.Now - state.LastRefresh > TimeSpan.FromMinutes(Math.Max(2, settings.NormalIntervalMinutes * 2));
             Color accent = exhausted ? Color.FromArgb(220, 77, 77) : state.Accent;
@@ -1303,13 +1304,13 @@ namespace AiUsageWebView2
             Text = T("設定", "Settings");
             Width = 900;
             Height = 730;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
             BackColor = Color.FromArgb(18, 18, 20);
             ForeColor = Color.WhiteSmoke;
-            Font = new Font("Segoe UI", 10f);
+            Font = new Font("Yu Gothic UI", 9.5f);
 
             var title = new Label
             {
@@ -1317,17 +1318,17 @@ namespace AiUsageWebView2
                 Location = new Point(28, 22),
                 Width = 300,
                 Height = 28,
-                Font = new Font("Segoe UI", 14f, FontStyle.Bold),
+                Font = new Font("Yu Gothic UI", 14f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(235, 238, 244)
             };
             Controls.Add(title);
 
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 230, 20), Width = 96, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(43, 43, 46), ForeColor = Color.FromArgb(215, 218, 224), Font = new Font("Segoe UI", 10f) };
-            cancel.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 76);
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 230, 18), Width = 96, Height = 36, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(38, 38, 42), ForeColor = Color.FromArgb(218, 222, 230), Font = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold) };
+            cancel.FlatAppearance.BorderColor = Color.FromArgb(56, 56, 62);
             cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(55, 55, 60);
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 126, 20), Width = 90, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(120, 82, 238), ForeColor = Color.White, Font = new Font("Segoe UI", 10f, FontStyle.Bold) };
-            ok.FlatAppearance.BorderColor = Color.FromArgb(140, 100, 255);
-            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(138, 96, 255);
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 126, 18), Width = 90, Height = 36, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(130, 84, 244), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold) };
+            ok.FlatAppearance.BorderColor = Color.FromArgb(130, 84, 244);
+            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(148, 104, 255);
             ok.Click += (s, e) =>
             {
                 ApplyToSettings();
@@ -1354,8 +1355,7 @@ namespace AiUsageWebView2
             topMost.Text = T("有効", "Enabled");
             topMost.Checked = settings.AlwaysOnTop;
             topMost.Width = 180;
-            topMost.FlatStyle = FlatStyle.Flat;
-            topMost.ForeColor = Color.FromArgb(225, 228, 235);
+            StylePillCheck(topMost);
             AddRow(leftCard, T("最前面に固定", "Always on top"), T("他のウィンドウより前に表示します。", "Keep above other windows."), topMost, ref leftY);
 
             int rightY = 18;
@@ -1400,6 +1400,8 @@ namespace AiUsageWebView2
             base.OnPaint(e);
             var g = e.Graphics;
             g.Clear(BackColor);
+            using (var border = new Pen(Color.FromArgb(68, 68, 74)))
+                g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }
 
         void AddSection(Panel parent, string text, ref int y)
@@ -1410,7 +1412,7 @@ namespace AiUsageWebView2
                 Location = new Point(20, y),
                 Width = 200,
                 Height = 24,
-                Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                Font = new Font("Yu Gothic UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(235, 238, 244)
             };
             parent.Controls.Add(label);
@@ -1420,8 +1422,8 @@ namespace AiUsageWebView2
         void AddRow(Panel parent, string title, string description, Control control, ref int y)
         {
             int rowH = 54;
-            var titleLabel = new Label { Text = title, Location = new Point(20, y + 6), Width = 178, Height = 20, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), ForeColor = Color.FromArgb(235, 238, 244) };
-            var descLabel = new Label { Text = description, Location = new Point(20, y + 27), Width = 180, Height = 20, Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(170, 176, 186) };
+            var titleLabel = new Label { Text = title, Location = new Point(20, y + 6), Width = 178, Height = 20, Font = new Font("Yu Gothic UI", 9.2f, FontStyle.Bold), ForeColor = Color.FromArgb(235, 238, 244) };
+            var descLabel = new Label { Text = description, Location = new Point(20, y + 27), Width = 180, Height = 20, Font = new Font("Yu Gothic UI", 8.2f), ForeColor = Color.FromArgb(170, 176, 186) };
             control.Location = new Point(parent.Width - 198, y + 12);
             parent.Controls.Add(titleLabel);
             parent.Controls.Add(descLabel);
@@ -1456,10 +1458,29 @@ namespace AiUsageWebView2
         {
             box.Text = text;
             box.Checked = value;
-            box.Location = new Point(x, 8);
+            box.Location = new Point(x, 3);
             box.Width = 86;
+            box.Height = 30;
+            StylePillCheck(box);
+        }
+
+        void StylePillCheck(CheckBox box)
+        {
+            box.Appearance = Appearance.Button;
             box.FlatStyle = FlatStyle.Flat;
-            box.ForeColor = Color.FromArgb(225, 228, 235);
+            box.TextAlign = ContentAlignment.MiddleCenter;
+            box.Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold);
+            box.BackColor = box.Checked ? Color.FromArgb(82, 104, 150) : Color.FromArgb(43, 43, 48);
+            box.ForeColor = box.Checked ? Color.White : Color.FromArgb(198, 204, 214);
+            box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(110, 140, 205) : Color.FromArgb(65, 65, 72);
+            box.CheckedChanged += (s, e) =>
+            {
+                box.Text = (box.Checked ? "✓ " : "") + box.Text.Replace("✓ ", "");
+                box.BackColor = box.Checked ? Color.FromArgb(82, 104, 150) : Color.FromArgb(43, 43, 48);
+                box.ForeColor = box.Checked ? Color.White : Color.FromArgb(198, 204, 214);
+                box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(110, 140, 205) : Color.FromArgb(65, 65, 72);
+            };
+            if (box.Checked && !box.Text.StartsWith("✓ ")) box.Text = "✓ " + box.Text;
         }
 
         void AddNumberWithColor(Panel parent, string title, string description, TextBox box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
@@ -1485,6 +1506,7 @@ namespace AiUsageWebView2
             box.ItemHeight = 24;
             box.BackColor = Color.FromArgb(47, 47, 50);
             box.ForeColor = Color.FromArgb(235, 238, 244);
+            box.Font = new Font("Yu Gothic UI", 9f);
             box.Width = 180;
             box.Height = 30;
             box.Items.Clear();
@@ -1527,6 +1549,7 @@ namespace AiUsageWebView2
             box.TextAlign = HorizontalAlignment.Right;
             box.BackColor = Color.FromArgb(47, 47, 50);
             box.ForeColor = Color.FromArgb(235, 238, 244);
+            box.Font = new Font("Yu Gothic UI", 9f);
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
@@ -1541,6 +1564,7 @@ namespace AiUsageWebView2
         {
             box.BackColor = Color.FromArgb(47, 47, 50);
             box.ForeColor = Color.FromArgb(235, 238, 244);
+            box.Font = new Font("Yu Gothic UI", 9f);
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
