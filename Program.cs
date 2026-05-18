@@ -1435,29 +1435,29 @@ namespace AiUsageWebView2
             body.Controls.Add(rightCard);
 
             int leftY = 12;
-            AddSection(leftCard, "更新", "Refresh", ref leftY);
-            AddRow(leftCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref leftY);
-            AddRow(leftCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref leftY);
-            AddRow(leftCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref leftY);
-            AddSection(leftCard, "閾値", "Thresholds", ref leftY);
-            AddNumberWithColor(leftCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref leftY, 1, 99);
-            AddNumberWithColor(leftCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref leftY, 1, 99);
-
-            int rightY = 12;
-            AddSection(rightCard, "一般", "General", ref rightY);
-            AddRow(rightCard, "Language", "Language", "", "", language, ref rightY);
+            AddSection(leftCard, "一般", "General", ref leftY);
+            AddRow(leftCard, "Language", "Language", "", "", language, ref leftY);
             SetupCombo(topMost, settings.AlwaysOnTop ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
-            AddRow(rightCard, "最前面に固定", "Always on top", "", "", topMost, ref rightY);
+            AddRow(leftCard, "最前面に固定", "Always on top", "", "", topMost, ref leftY);
             SetupCombo(showCodex,  settings.ShowCodex  ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             SetupCombo(showClaude, settings.ShowClaude ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
-            AddRow(rightCard, "Codex", "Codex", "", "", showCodex,  ref rightY);
-            AddRow(rightCard, "Claude", "Claude", "", "", showClaude, ref rightY);
-            AddSection(rightCard, "レイアウト", "Layout", ref rightY);
-            AddRow(rightCard, "配置", "Arrangement", "", "", layoutMode, ref rightY);
-            AddRow(rightCard, "Codex 数値", "Codex value", "残量 / 使用量", "remaining / used", codexMode, ref rightY);
-            AddRow(rightCard, "Claude 数値", "Claude value", "残量 / 使用量", "remaining / used", claudeMode, ref rightY);
-            AddRow(rightCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref rightY);
-            AddRow(rightCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref rightY);
+            AddRow(leftCard, "Codex", "Codex", "", "", showCodex,  ref leftY);
+            AddRow(leftCard, "Claude", "Claude", "", "", showClaude, ref leftY);
+            AddSection(leftCard, "レイアウト", "Layout", ref leftY);
+            AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
+            AddRow(leftCard, "Codex 数値", "Codex value", "残量 / 使用量", "remaining / used", codexMode, ref leftY);
+            AddRow(leftCard, "Claude 数値", "Claude value", "残量 / 使用量", "remaining / used", claudeMode, ref leftY);
+            AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
+            AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
+
+            int rightY = 12;
+            AddSection(rightCard, "更新", "Refresh", ref rightY);
+            AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
+            AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
+            AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
+            AddSection(rightCard, "閾値", "Thresholds", ref rightY);
+            AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
