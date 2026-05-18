@@ -1,6 +1,10 @@
 packages/
 bin/
+obj/
+.vs/
 *.zip
 *.nupkg
+*.pdb
+settings.json
 
 .cert-thumbprint

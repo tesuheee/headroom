@@ -2,7 +2,7 @@
 
 $cert = New-SelfSignedCertificate `
     -Type CodeSigningCert `
-    -Subject "CN=AiUsageWebView2" `
+    -Subject "CN=Headroom" `
     -CertStoreLocation "Cert:\CurrentUser\My" `
     -HashAlgorithm SHA256 `
     -NotAfter (Get-Date).AddYears(5)
