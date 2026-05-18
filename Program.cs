@@ -934,9 +934,15 @@ namespace Headroom
             g.DrawString(label, labelFont, muted, labelX + labelColW - curLabelW, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
             string pctStr = empty ? "--" : pct.Value + "%";
-            g.DrawString(pctStr, numFont, pctBrush, percentX, y - 4);
-            int pctWidth = Math.Max(28, (int)g.MeasureString(pctStr, numFont).Width - 5);
-            int barX = percentX + pctWidth + 12;
+            int pctColW = Math.Max(48, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
+            using (var pctFormat = new StringFormat())
+            {
+                pctFormat.Alignment = StringAlignment.Far;
+                pctFormat.LineAlignment = StringAlignment.Near;
+                pctFormat.FormatFlags = StringFormatFlags.NoWrap;
+                g.DrawString(pctStr, numFont, pctBrush, new RectangleF(percentX, y - 4, pctColW, numFont.Height + 4), pctFormat);
+            }
+            int barX = percentX + pctColW + 12;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
