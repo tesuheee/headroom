@@ -1356,15 +1356,15 @@ namespace AiUsageWebView2
             var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 14), Width = 96, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 9f) };
             cancel.FlatAppearance.BorderColor = Color.FromArgb(52, 52, 58);
             cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(44, 44, 50);
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 114, 14), Width = 90, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(118, 78, 240), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold) };
-            ok.FlatAppearance.BorderColor = Color.FromArgb(118, 78, 240);
-            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(136, 94, 255);
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 114, 14), Width = 90, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold) };
+            ok.FlatAppearance.BorderColor = Color.FromArgb(45, 132, 235);
+            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 152, 250);
             ok.Click += (s, e) => ApplyToSettings();
             Controls.Add(cancel);
             Controls.Add(ok);
 
-            Controls.Add(new Panel { Location = new Point(0, 56), Width = Width, Height = 1, BackColor = Color.FromArgb(52, 48, 72) });
-            Controls.Add(new Panel { Location = new Point(440, 57), Width = 1, Height = Height - 57, BackColor = Color.FromArgb(34, 32, 50) });
+            Controls.Add(new Panel { Location = new Point(0, 56), Width = Width, Height = 1, BackColor = Color.FromArgb(36, 54, 80) });
+            Controls.Add(new Panel { Location = new Point(440, 57), Width = 1, Height = Height - 57, BackColor = Color.FromArgb(24, 38, 60) });
 
             var leftCard = SettingsCard(0, 57, 440, Height - 57);
             var rightCard = SettingsCard(441, 57, 439, Height - 57);
@@ -1438,18 +1438,18 @@ namespace AiUsageWebView2
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            // Header gradient (subtle purple-dark)
+            // Header gradient (subtle blue-dark)
             using (var hg = new System.Drawing.Drawing2D.LinearGradientBrush(
                 new Rectangle(0, 0, Width, 57),
-                Color.FromArgb(32, 28, 50),
-                Color.FromArgb(14, 14, 22),
+                Color.FromArgb(18, 30, 52),
+                Color.FromArgb(12, 14, 22),
                 90f))
                 g.FillRectangle(hg, 0, 0, Width, 56);
 
-            // Outer border with purple tint
-            using (var b1 = new Pen(Color.FromArgb(74, 70, 100)))
+            // Outer border with blue tint
+            using (var b1 = new Pen(Color.FromArgb(48, 72, 108)))
                 g.DrawRectangle(b1, 0, 0, Width - 1, Height - 1);
-            using (var b2 = new Pen(Color.FromArgb(22, 160, 130, 230)))
+            using (var b2 = new Pen(Color.FromArgb(24, 45, 132, 235)))
                 g.DrawRectangle(b2, 1, 1, Width - 3, Height - 3);
         }
 
@@ -1472,7 +1472,7 @@ namespace AiUsageWebView2
         void AddSection(Panel parent, string text, ref int y)
         {
             y += 10;
-            var bar = new Panel { Location = new Point(24, y + 2), Width = 3, Height = 14, BackColor = Color.FromArgb(118, 78, 240) };
+            var bar = new Panel { Location = new Point(24, y + 2), Width = 3, Height = 14, BackColor = Color.FromArgb(45, 132, 235) };
             parent.Controls.Add(bar);
             var label = new Label
             {
@@ -1539,15 +1539,15 @@ namespace AiUsageWebView2
             box.TextAlign = ContentAlignment.MiddleCenter;
             box.Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold);
             box.ForeColor = Color.FromArgb(218, 222, 232);
-            box.BackColor = box.Checked ? Color.FromArgb(118, 78, 240) : Color.FromArgb(43, 43, 48);
-            box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(136, 94, 255) : Color.FromArgb(65, 65, 72);
-            box.FlatAppearance.CheckedBackColor = Color.FromArgb(118, 78, 240);
-            box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(136, 94, 255) : Color.FromArgb(55, 55, 62);
+            box.BackColor = box.Checked ? Color.FromArgb(45, 132, 235) : Color.FromArgb(43, 43, 48);
+            box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(65, 65, 72);
+            box.FlatAppearance.CheckedBackColor = Color.FromArgb(45, 132, 235);
+            box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(55, 55, 62);
             box.CheckedChanged += (s, e) =>
             {
-                box.BackColor = box.Checked ? Color.FromArgb(118, 78, 240) : Color.FromArgb(43, 43, 48);
-                box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(136, 94, 255) : Color.FromArgb(65, 65, 72);
-                box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(136, 94, 255) : Color.FromArgb(55, 55, 62);
+                box.BackColor = box.Checked ? Color.FromArgb(45, 132, 235) : Color.FromArgb(43, 43, 48);
+                box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(65, 65, 72);
+                box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(55, 55, 62);
             };
         }
 
