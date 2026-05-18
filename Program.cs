@@ -845,7 +845,7 @@ namespace AiUsageWebView2
             bool atLimit = pct.HasValue && (showUsed ? pct.Value >= 100 : pct.Value <= 0);
             bool warning = pct.HasValue && !limit && (showUsed ? 100 - pct.Value : pct.Value) <= settings.WarningRemainingPercent;
             Color rowColor = RowColor(pct, showUsed, accent);
-            Color numColor = limit ? Color.FromArgb(255, 130, 130) : (warning ? Color.FromArgb(245, 200, 100) : Color.FromArgb(240, 242, 248));
+            Color numColor = Color.FromArgb(240, 242, 248);
             using (var pctBrush = new SolidBrush(numColor))
             {
             int labelX = x + 10;
