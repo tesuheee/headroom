@@ -1374,37 +1374,37 @@ namespace AiUsageWebView2
 
             int leftY = 12;
             AddSection(leftCard, "一般", "General", ref leftY);
-            AddRow(leftCard, "Language", "Language", "表示言語です。", "Display language.", language, ref leftY);
+            AddRow(leftCard, "Language", "Language", "", "", language, ref leftY);
             topMost.Text = T("有効", "Enabled");
             topMost.Tag = "有効|Enabled";
             topMost.Checked = settings.AlwaysOnTop;
             topMost.Width = 180;
             topMost.Height = 30;
             StylePillCheck(topMost);
-            AddRow(leftCard, "最前面に固定", "Always on top", "他のウィンドウより前に表示します。", "Keep above other windows.", topMost, ref leftY);
+            AddRow(leftCard, "最前面に固定", "Always on top", "", "", topMost, ref leftY);
 
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
-            AddRow(leftCard, "表示するサービス", "Visible services", "使っているサービスだけを表示します。", "Choose services to show.", ServicePicker(), ref leftY);
-            AddRow(leftCard, "配置", "Arrangement", "2つのサービスの並べ方です。", "Arrange two service cards.", layoutMode, ref leftY);
-            AddRow(leftCard, "Codex 表示", "Codex display", "Codexを残量または使用量で表示します。", "Show Codex as remaining or used.", codexMode, ref leftY);
-            AddRow(leftCard, "Claude 表示", "Claude display", "Claudeを残量または使用量で表示します。", "Show Claude as remaining or used.", claudeMode, ref leftY);
-            AddRow(leftCard, "5時間リセット", "5h reset", "5時間枠のリセット表示です。", "Display for 5-hour reset.", fiveResetMode, ref leftY);
-            AddRow(leftCard, "週リセット", "Weekly reset", "週間枠のリセット表示です。", "Display for weekly reset.", weeklyResetMode, ref leftY);
+            AddRow(leftCard, "表示するサービス", "Visible services", "", "", ServicePicker(), ref leftY);
+            AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
+            AddRow(leftCard, "Codex 表示", "Codex display", "", "", codexMode, ref leftY);
+            AddRow(leftCard, "Claude 表示", "Claude display", "", "", claudeMode, ref leftY);
+            AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
+            AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
 
             int rightY = 12;
             AddSection(rightCard, "更新", "Refresh", ref rightY);
-            AddRow(rightCard, "通常更新間隔", "Normal refresh", "ブーストしていない時の更新間隔です。", "Refresh interval when boost is off.", normal, ref rightY);
-            AddRow(rightCard, "ブースト時間", "Boost duration", "高頻度更新を続ける時間です。", "How long boost stays on.", boostDuration, ref rightY);
-            AddRow(rightCard, "ブースト更新間隔", "Boost refresh", "ブースト中の更新間隔です。", "Refresh interval while boosted.", boostInterval, ref rightY);
-            AddRow(rightCard, "直前更新開始", "Final window", "リセット直前に更新を速める時間です。", "Start faster refresh before reset.", finalWindow, ref rightY);
-            AddRow(rightCard, "直前更新間隔", "Final interval", "リセット直前の更新間隔です。", "Refresh interval near reset.", finalInterval, ref rightY);
+            AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
+            AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
+            AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
+            AddRow(rightCard, "リセット前高頻度更新 (分)", "Pre-reset boost window (min)", "5時間枠リセット前にブーストを開始する分数。", "Minutes before 5h reset to start boosted refresh.", finalWindow, ref rightY);
+            AddRow(rightCard, "直前更新間隔 (分)", "Pre-reset interval (min)", "", "", finalInterval, ref rightY);
 
             AddSection(rightCard, "見た目", "Appearance", ref rightY);
-            AddRow(rightCard, "ラベル文字", "Label text", "5時間・週などの文字サイズです。", "Font size for row labels.", labelSize, ref rightY);
-            AddRow(rightCard, "パーセント文字", "Percent text", "残量・使用量の数字サイズです。", "Font size for percentage values.", percentSize, ref rightY);
-            AddRow(rightCard, "リセット文字", "Reset text", "リセット表示の文字サイズです。", "Font size for reset text.", resetSize, ref rightY);
-            AddNumberWithColor(rightCard, "黄色になる残量", "Yellow threshold", "この残量以下で黄色表示にします。", "Turn yellow at or below this percent.", warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
-            AddNumberWithColor(rightCard, "赤になる残量", "Red threshold", "この残量以下で赤表示にします。", "Turn red at or below this percent.", criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
+            AddRow(rightCard, "ラベル文字サイズ", "Label font size", "", "", labelSize, ref rightY);
+            AddRow(rightCard, "パーセント文字サイズ", "Percent font size", "", "", percentSize, ref rightY);
+            AddRow(rightCard, "リセット表示文字サイズ", "Reset text size", "", "", resetSize, ref rightY);
+            AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -1493,11 +1493,15 @@ namespace AiUsageWebView2
         void AddRow(Panel parent, string titleJa, string titleEn, string descJa, string descEn, Control control, ref int y)
         {
             int rowH = 50;
-            var titleLabel = new Label { Text = T(titleJa, titleEn), Tag = titleJa + "|" + titleEn, Location = new Point(24, y + 9), Width = 210, Height = 20, Font = new Font("Yu Gothic UI", 9.2f), ForeColor = Color.FromArgb(210, 214, 226) };
-            var descLabel = new Label { Text = T(descJa, descEn), Tag = descJa + "|" + descEn, Location = new Point(24, y + 28), Width = 210, Height = 17, Font = new Font("Yu Gothic UI", 7.8f), ForeColor = Color.FromArgb(96, 104, 120) };
-            control.Location = new Point(parent.Width - 200, y + 11);
+            bool hasDesc = !string.IsNullOrEmpty(descJa);
+            var titleLabel = new Label { Text = T(titleJa, titleEn), Tag = titleJa + "|" + titleEn, Location = new Point(24, hasDesc ? y + 9 : y + 15), Width = 210, Height = 20, Font = new Font("Yu Gothic UI", 9.2f), ForeColor = Color.FromArgb(210, 214, 226) };
             parent.Controls.Add(titleLabel);
-            parent.Controls.Add(descLabel);
+            if (hasDesc)
+            {
+                var descLabel = new Label { Text = T(descJa, descEn), Tag = descJa + "|" + descEn, Location = new Point(24, y + 28), Width = 210, Height = 17, Font = new Font("Yu Gothic UI", 7.8f), ForeColor = Color.FromArgb(96, 104, 120) };
+                parent.Controls.Add(descLabel);
+            }
+            control.Location = new Point(parent.Width - 200, y + 11);
             parent.Controls.Add(control);
             var line = new Panel { Location = new Point(24, y + rowH - 1), Width = parent.Width - 48, Height = 1, BackColor = Color.FromArgb(26, 26, 32) };
             parent.Controls.Add(line);
