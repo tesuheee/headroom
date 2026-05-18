@@ -1337,7 +1337,7 @@ namespace AiUsageWebView2
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            BackColor = Color.FromArgb(10, 10, 14);
+            BackColor = Color.FromArgb(14, 14, 18);
             ForeColor = Color.WhiteSmoke;
             Font = new Font("Yu Gothic UI", 9.5f);
 
@@ -1354,10 +1354,10 @@ namespace AiUsageWebView2
             };
             Controls.Add(title);
 
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel", DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 14), Width = 96, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 9f) };
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel", DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 13), Width = 96, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 10.5f) };
             cancel.FlatAppearance.BorderColor = Color.FromArgb(52, 52, 58);
             cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(44, 44, 50);
-            var ok = new Button { Text = T("保存", "Save"), Tag = "保存|Save", DialogResult = DialogResult.OK, Location = new Point(Width - 114, 14), Width = 90, Height = 30, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold) };
+            var ok = new Button { Text = T("保存", "Save"), Tag = "保存|Save", DialogResult = DialogResult.OK, Location = new Point(Width - 114, 13), Width = 90, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold) };
             ok.FlatAppearance.BorderColor = Color.FromArgb(45, 132, 235);
             ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 152, 250);
             ok.Click += (s, e) => ApplyToSettings();
@@ -1440,18 +1440,18 @@ namespace AiUsageWebView2
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            // Header gradient (subtle blue-dark)
+            // Header gradient matching main widget card
             using (var hg = new System.Drawing.Drawing2D.LinearGradientBrush(
                 new Rectangle(0, 0, Width, 57),
-                Color.FromArgb(18, 30, 52),
-                Color.FromArgb(12, 14, 22),
+                Color.FromArgb(30, 30, 34),
+                Color.FromArgb(22, 22, 26),
                 90f))
                 g.FillRectangle(hg, 0, 0, Width, 56);
 
-            // Outer border with blue tint
-            using (var b1 = new Pen(Color.FromArgb(48, 72, 108)))
+            // Outer border matching main card style
+            using (var b1 = new Pen(Color.FromArgb(48, 48, 54)))
                 g.DrawRectangle(b1, 0, 0, Width - 1, Height - 1);
-            using (var b2 = new Pen(Color.FromArgb(24, 45, 132, 235)))
+            using (var b2 = new Pen(Color.FromArgb(28, 255, 255, 255)))
                 g.DrawRectangle(b2, 1, 1, Width - 3, Height - 3);
         }
 
@@ -1511,7 +1511,7 @@ namespace AiUsageWebView2
                 Location = new Point(x, y),
                 Width = width,
                 Height = height,
-                BackColor = Color.FromArgb(18, 18, 26)
+                BackColor = Color.FromArgb(20, 20, 24)
             };
         }
 
@@ -1540,7 +1540,7 @@ namespace AiUsageWebView2
             box.Appearance = Appearance.Button;
             box.FlatStyle = FlatStyle.Flat;
             box.TextAlign = ContentAlignment.MiddleCenter;
-            box.Font = new Font("Yu Gothic UI", 9f, FontStyle.Bold);
+            box.Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold);
             box.ForeColor = Color.FromArgb(218, 222, 232);
             box.BackColor = box.Checked ? Color.FromArgb(45, 132, 235) : Color.FromArgb(43, 43, 48);
             box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(65, 65, 72);
