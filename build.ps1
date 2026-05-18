@@ -53,6 +53,19 @@ if ($LASTEXITCODE -ne 0) {
 
 "Built: $Exe"
 
+$thumbprintFile = Join-Path $PSScriptRoot ".cert-thumbprint"
+if (Test-Path $thumbprintFile) {
+    $thumbprint = (Get-Content $thumbprintFile -Raw).Trim()
+    $signingCert = Get-Item "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue
+    if ($signingCert) {
+        Set-AuthenticodeSignature -FilePath $Exe -Certificate $signingCert `
+            -TimestampServer "http://timestamp.digicert.com" | Out-Null
+        "Signed: $Exe"
+    } else {
+        Write-Warning "Cert not found in store. Run setup-cert.ps1 first."
+    }
+}
+
 $ZipName = if ($Version) { "AiUsageWebView2-v$Version.zip" } else { "AiUsageWebView2.zip" }
 $ZipPath = Join-Path $PSScriptRoot $ZipName
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
