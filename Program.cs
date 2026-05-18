@@ -1160,16 +1160,25 @@ namespace Headroom
 
         void DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
         {
-            using (var path = RoundRect(x, y, 38, 20, 10))
-            {
-                using (var bg = new SolidBrush(bgColor))
-                    g.FillPath(bg, path);
-                using (var border = new Pen(Color.FromArgb(40, textColor.R, textColor.G, textColor.B), 0.6f))
-                    g.DrawPath(border, path);
-            }
             using (var f = new Font("Segoe UI", 8.2f, FontStyle.Bold))
-            using (var b = new SolidBrush(textColor))
-                g.DrawString(text, f, b, x + 7, y + 3);
+            {
+                int badgeW = Math.Max(32, (int)Math.Ceiling(g.MeasureString(text, f).Width) + 16);
+                using (var path = RoundRect(x, y, badgeW, 20, 10))
+                {
+                    using (var bg = new SolidBrush(bgColor))
+                        g.FillPath(bg, path);
+                    using (var border = new Pen(Color.FromArgb(40, textColor.R, textColor.G, textColor.B), 0.6f))
+                        g.DrawPath(border, path);
+                }
+                using (var b = new SolidBrush(textColor))
+                using (var sf = new StringFormat())
+                {
+                    sf.Alignment = StringAlignment.Center;
+                    sf.LineAlignment = StringAlignment.Center;
+                    sf.FormatFlags = StringFormatFlags.NoWrap;
+                    g.DrawString(text, f, b, new RectangleF(x, y, badgeW, 20), sf);
+                }
+            }
         }
 
         void DrawServiceMark(Graphics g, string name, int x, int y, Color accent)
