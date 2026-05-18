@@ -34,7 +34,7 @@ Disable a service from **Settings → General** to compact down to one card.
 
 ![Vertical layout](docs/03-layout-vertical.png)
 
-Toggle from the side rail, or via **Settings → Layout**.
+Switch between wide and tall layouts from **Settings → Layout**.
 
 ### Display modes
 
@@ -42,22 +42,26 @@ Toggle from the side rail, or via **Settings → Layout**.
 
 Each service has its own **Remaining / Used** switch. Reset can be a countdown ("3h 53m left") or an absolute clock time ("5/25 0:59"), set independently for 5-hour and weekly. Different phrasings on Claude and Codex pages are normalized so the format stays consistent.
 
-### Limit reached
+### Color thresholds
 
-![Limit reached](docs/05-limit-reached.png)
+![Color thresholds](docs/05-color-thresholds.png)
 
-When a quota is exhausted, the affected card is highlighted with a limit badge and warning color so it is visible at a glance.
+Each quota row is colored independently: normal rows use the service color, warning rows turn yellow, and critical rows turn red. If a quota is exhausted, the affected card also shows a `Limit` badge.
 
 ## Buttons
 
-| Button | Action |
-|--------|--------|
-| ↻ | Refresh now |
-| ⚡ | Boost — refresh every minute for 30 minutes |
+![Side rail controls](docs/06-sidebar-guide.png)
+
+| Control | Action |
+|---------|--------|
 | × | Close |
-| 📌 | Pin / unpin (always on top) |
-| ⇆ | Toggle horizontal / vertical |
+| Pin | Toggle always on top |
+| R / U | Toggle Remaining / Used for visible services |
+| 5h | Toggle 5-hour reset between countdown and clock time |
+| Wk | Toggle weekly reset between countdown and clock time |
 | ⚙ | Open settings |
+| ↻ | Refresh one service now |
+| ⚡ | Boost one service — refresh every minute for 30 minutes |
 
 ## Settings
 
