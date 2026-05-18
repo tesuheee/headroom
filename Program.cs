@@ -148,12 +148,6 @@ namespace AiUsageWebView2
         int RefreshIntervalMinutes(ServiceState service)
         {
             if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
-            TimeSpan untilReset;
-            if (settings.FinalRefreshEnabled &&
-                TryGetResetRemaining(service.Data.FiveHourReset, false, out untilReset) &&
-                untilReset.TotalMinutes > 0 &&
-                untilReset.TotalMinutes <= settings.FinalRefreshWindowMinutes)
-                return settings.FinalRefreshIntervalMinutes;
             return settings.NormalIntervalMinutes;
         }
 
@@ -638,8 +632,9 @@ namespace AiUsageWebView2
             bool twoServices = settings.ShowClaude && settings.ShowCodex;
             int idealW, idealH;
             // card unit = 360px: vertical W=404, horizontal W=2*360+10+44=774
+            // vertical H: 2*(170-16) + 10 + 16 = 334 keeps each card the same height as single
             if      (twoServices && !vertical) { idealW = 774; idealH = 170; }
-            else if (twoServices)              { idealW = 404; idealH = 340; }
+            else if (twoServices)              { idealW = 404; idealH = 334; }
             else                               { idealW = 404; idealH = 170; }
             Width  = Math.Max(MinimumSize.Width,  idealW);
             Height = Math.Max(MinimumSize.Height, idealH);
@@ -1366,9 +1361,6 @@ namespace AiUsageWebView2
         readonly DarkTextBox normal = new DarkTextBox();
         readonly DarkTextBox boostDuration = new DarkTextBox();
         readonly DarkTextBox boostInterval = new DarkTextBox();
-        readonly DarkTextBox finalWindow = new DarkTextBox();
-        readonly DarkTextBox finalInterval = new DarkTextBox();
-        readonly DarkComboBox finalRefreshMode = new DarkComboBox();
         readonly DarkComboBox topMost   = new DarkComboBox();
         readonly DarkComboBox showCodex  = new DarkComboBox();
         readonly DarkComboBox showClaude = new DarkComboBox();
@@ -1452,10 +1444,6 @@ namespace AiUsageWebView2
             AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
             AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
             AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
-            SetupCombo(finalRefreshMode, settings.FinalRefreshEnabled ? "enabled" : "disabled", new[] { T("する", "Enable"), T("しない", "Disable") });
-            AddRow(rightCard, "直近リセット前ブースト", "Pre-next-reset boost", "", "", finalRefreshMode, ref rightY);
-            AddRow(rightCard, "　開始 (分前)", "  Start (min before)", "", "", finalWindow, ref rightY);
-            AddRow(rightCard, "　更新間隔 (分)", "  Interval (min)", "", "", finalInterval, ref rightY);
 
             AddSection(rightCard, "見た目", "Appearance", ref rightY);
             AddRow(rightCard, "ラベル文字サイズ", "Label font size", "", "", labelSize, ref rightY);
@@ -1652,7 +1640,6 @@ namespace AiUsageWebView2
             if (box == layoutMode)                              box.SelectedIndex = string.Equals(value, "vertical",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            else if (box == finalRefreshMode)                  box.SelectedIndex = string.Equals(value, "disabled",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == topMost)                           box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == showCodex || box == showClaude)   box.SelectedIndex = string.Equals(value, "show",      StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == language)                          box.SelectedIndex = string.Equals(value, "en",        StringComparison.OrdinalIgnoreCase) ? 1 : 0;
@@ -1663,8 +1650,6 @@ namespace AiUsageWebView2
             StyleNumber(normal, settings.NormalIntervalMinutes, 1, 240);
             StyleNumber(boostDuration, settings.BoostDurationMinutes, 1, 240);
             StyleNumber(boostInterval, settings.BoostIntervalMinutes, 1, 240);
-            StyleNumber(finalWindow, settings.FinalRefreshWindowMinutes, 1, 120);
-            StyleNumber(finalInterval, settings.FinalRefreshIntervalMinutes, 1, 30);
             StyleNumber(labelSize, (int)Math.Round(settings.LabelFontSize), 6, 32);
             StyleNumber(percentSize, (int)Math.Round(settings.PercentFontSize), 8, 42);
             StyleNumber(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
@@ -1723,8 +1708,6 @@ namespace AiUsageWebView2
             language.SelectedIndexChanged += applyLanguage;
             boostDuration.TextChanged += apply;
             boostInterval.TextChanged += apply;
-            finalWindow.TextChanged += apply;
-            finalInterval.TextChanged += apply;
             showCodex.SelectedIndexChanged  += apply;
             showClaude.SelectedIndexChanged += apply;
             layoutMode.SelectedIndexChanged += apply;
@@ -1738,7 +1721,6 @@ namespace AiUsageWebView2
             warningPercent.TextChanged += apply;
             criticalPercent.TextChanged += apply;
             topMost.SelectedIndexChanged += apply;
-            finalRefreshMode.SelectedIndexChanged += apply;
         }
 
         void ReloadComboItems()
@@ -1771,11 +1753,6 @@ namespace AiUsageWebView2
             weeklyResetMode.Items.Clear();
             weeklyResetMode.Items.AddRange(new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
             weeklyResetMode.SelectedIndex = Math.Max(0, Math.Min(1, weeklySel));
-
-            int finalRefreshSel = finalRefreshMode.SelectedIndex;
-            finalRefreshMode.Items.Clear();
-            finalRefreshMode.Items.AddRange(new[] { T("する", "Enable"), T("しない", "Disable") });
-            finalRefreshMode.SelectedIndex = Math.Max(0, Math.Min(1, finalRefreshSel));
 
             topMost.Items.Clear();
             topMost.Items.AddRange(new[] { T("有効", "Enabled"), T("無効", "Disabled") });
@@ -1812,8 +1789,6 @@ namespace AiUsageWebView2
             settings.Language = language.SelectedIndex == 1 ? "en" : "ja";
             settings.BoostDurationMinutes = ReadBoxInt(boostDuration, settings.BoostDurationMinutes, 1, 240);
             settings.BoostIntervalMinutes = ReadBoxInt(boostInterval, settings.BoostIntervalMinutes, 1, 240);
-            settings.FinalRefreshWindowMinutes = ReadBoxInt(finalWindow, settings.FinalRefreshWindowMinutes, 1, 120);
-            settings.FinalRefreshIntervalMinutes = ReadBoxInt(finalInterval, settings.FinalRefreshIntervalMinutes, 1, 30);
             if (showCodex.SelectedIndex == 1 && showClaude.SelectedIndex == 1) showClaude.SelectedIndex = 0;
             settings.ShowCodex  = showCodex.SelectedIndex  == 0;
             settings.ShowClaude = showClaude.SelectedIndex == 0;
@@ -1821,7 +1796,7 @@ namespace AiUsageWebView2
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
             settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "relative" : "time";
-            settings.WeeklyResetMode = weeklyResetMode.SelectedIndex == 1 ? "relative" : "time";
+            settings.WeeklyResetMode   = weeklyResetMode.SelectedIndex == 1 ? "relative" : "time";
             settings.LabelFontSize = ReadBoxInt(labelSize, (int)Math.Round(settings.LabelFontSize), 6, 32);
             settings.PercentFontSize = ReadBoxInt(percentSize, (int)Math.Round(settings.PercentFontSize), 8, 42);
             settings.ResetFontSize = ReadBoxInt(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
@@ -1829,7 +1804,6 @@ namespace AiUsageWebView2
             int critical = ReadBoxInt(criticalPercent, settings.CriticalRemainingPercent, 1, 99);
             settings.WarningRemainingPercent = Math.Max(critical, warning);
             settings.CriticalRemainingPercent = Math.Min(critical, settings.WarningRemainingPercent);
-            settings.FinalRefreshEnabled = finalRefreshMode.SelectedIndex == 0;
             settings.AlwaysOnTop = topMost.SelectedIndex == 0;
         }
 
@@ -1946,9 +1920,6 @@ namespace AiUsageWebView2
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
-        public int FinalRefreshWindowMinutes = 15;
-        public int FinalRefreshIntervalMinutes = 1;
-        public bool FinalRefreshEnabled = false;
         public bool AlwaysOnTop = false;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
@@ -1987,9 +1958,6 @@ namespace AiUsageWebView2
                 s.NormalIntervalMinutes = ReadInt(json, "normalIntervalMinutes", s.NormalIntervalMinutes);
                 s.BoostDurationMinutes = ReadInt(json, "boostDurationMinutes", s.BoostDurationMinutes);
                 s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
-                s.FinalRefreshWindowMinutes = ReadInt(json, "finalRefreshWindowMinutes", s.FinalRefreshWindowMinutes);
-                s.FinalRefreshIntervalMinutes = ReadInt(json, "finalRefreshIntervalMinutes", s.FinalRefreshIntervalMinutes);
-                s.FinalRefreshEnabled = ReadBool(json, "finalRefreshEnabled", s.FinalRefreshEnabled);
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
                 s.ShowCodex = ReadBool(json, "showCodex", s.ShowCodex);
                 s.ShowClaude = ReadBool(json, "showClaude", s.ShowClaude);
@@ -2025,9 +1993,6 @@ namespace AiUsageWebView2
             NormalIntervalMinutes = other.NormalIntervalMinutes;
             BoostDurationMinutes = other.BoostDurationMinutes;
             BoostIntervalMinutes = other.BoostIntervalMinutes;
-            FinalRefreshWindowMinutes = other.FinalRefreshWindowMinutes;
-            FinalRefreshIntervalMinutes = other.FinalRefreshIntervalMinutes;
-            FinalRefreshEnabled = other.FinalRefreshEnabled;
             AlwaysOnTop = other.AlwaysOnTop;
             ShowCodex = other.ShowCodex;
             ShowClaude = other.ShowClaude;
@@ -2058,9 +2023,6 @@ namespace AiUsageWebView2
                     "  \"normalIntervalMinutes\": " + NormalIntervalMinutes + ",\r\n" +
                     "  \"boostDurationMinutes\": " + BoostDurationMinutes + ",\r\n" +
                     "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +
-                    "  \"finalRefreshWindowMinutes\": " + FinalRefreshWindowMinutes + ",\r\n" +
-                    "  \"finalRefreshIntervalMinutes\": " + FinalRefreshIntervalMinutes + ",\r\n" +
-                    "  \"finalRefreshEnabled\": " + (FinalRefreshEnabled ? "true" : "false") + ",\r\n" +
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
                     "  \"showCodex\": " + (ShowCodex ? "true" : "false") + ",\r\n" +
                     "  \"showClaude\": " + (ShowClaude ? "true" : "false") + ",\r\n" +
