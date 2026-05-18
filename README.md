@@ -1,90 +1,109 @@
-# Claude / Codex 使用量モニター
+[**English**] · [日本語](README.ja.md)
 
-Claude と Codex のWeb使用量ページを読み取り、デスクトップに常時表示する Windows アプリです。
+# AI Usage Monitor
 
-## できること
+A floating Windows desktop widget that reads the Claude and Codex web usage pages and keeps your remaining quota visible at a glance.
 
-- Claude と Codex の使用状況を同じ画面で確認できます
-- 5時間枠と週間枠の残り具合をひと目で把握できます
-- 残量と使用量のどちらを見るか、自分の見方に合わせて選べます
-- 表示するサービスや並べ方を作業環境に合わせて選べます
-- 上限が近いサービスに気づきやすくなります
+## Features
 
-## 使い方
+- Watch Claude and Codex usage side by side, in one always-on-top widget
+- See both the 5-hour rolling quota and the weekly quota for each service
+- Independently toggle between **Remaining** and **Used** views per service
+- Show only the services you care about (Codex-only, Claude-only, or both)
+- Switch between horizontal and vertical layouts with a single click
+- Display reset as a **countdown** ("3h 53m left") or as an **absolute time** ("5/25 0:59"), independently for 5-hour and weekly
+- Yellow/red threshold colors warn when remaining quota gets low
+- One-click **Boost** for high-frequency refresh when you are close to a reset
 
-`AiUsageWebView2.exe` をダブルクリックして起動します。
+## Getting Started
 
-初回のみ、各カードの「ログイン」ボタンを押して Claude と Codex にログインしてください。一度ログインすれば次回以降は自動で取得されます。
+1. Download the latest `AiUsageWebView2.zip` from Releases, unzip anywhere.
+2. Double-click `AiUsageWebView2.exe`.
+3. On first run, click the **Login** button on each card and sign in to Claude / Codex through the embedded browser. After that, usage updates automatically.
 
-## 画面レイアウト
+> Requires the WebView2 Runtime (preinstalled on Windows 11 and recent Windows 10).
 
-### 横並び（両サービス）
+## Screens
 
-![横レイアウト](docs/layout-horizontal.png)
+### Both services, horizontal (default)
 
-### 縦並び（両サービス）
+![Overview](docs/01-overview.png)
 
-![縦レイアウト](docs/layout-vertical.png)
+Claude and Codex each show their 5-hour and weekly quotas with a percentage, a progress bar, and a reset hint. The side rail on the right hosts the global controls.
 
-### 片方だけ表示
+### Single service
 
-Claude のみ、または Codex のみを表示できます。
+![Single service](docs/02-single-service.png)
 
-![Claude のみ](docs/single-claude.png)
+If you only use one of the two, disable the other from Settings → General. The widget shrinks to a compact one-card layout.
 
-![Codex のみ](docs/single-codex.png)
+### Vertical layout
 
-### 残量 / 使用量の切り替え
+![Vertical layout](docs/03-layout-vertical.png)
 
-残量表示（デフォルト）と使用量表示を切り替えられます。
+Stack the two cards vertically — handy for narrow side regions on the desktop. Use the layout toggle button on the side rail, or switch from Settings → Layout.
 
-**残量表示**（「残り XX%」）
+### Display modes & reset formats
 
-![残量表示](docs/layout-horizontal.png)
+![Display modes](docs/04-display-modes.png)
 
-**使用量表示**（「使用 XX%」）
+Each service has its own **Remaining / Used** switch. Reset time can be a relative countdown or an absolute clock time, configured separately for the 5-hour and weekly quotas. Original strings on Claude/Codex pages are parsed into a datetime, so the formatting is consistent regardless of how each provider phrases it.
 
-![使用量表示](docs/display-used.png)
+## Buttons
 
-### リセット時刻の表示形式
+| Button | Action |
+|--------|--------|
+| ⚡ | Boost — high-frequency refresh (1-minute interval for 30 minutes) |
+| ↻ | Refresh now |
+| × | Close |
+| 📌 | Pin / unpin (always on top) |
+| ⇆ | Toggle horizontal / vertical layout |
+| ⚙ | Open settings |
 
-5時間リセット・週リセットの表示を「残り時間」か「リセット時刻」で選択できます。`layout-horizontal.png` では 5時間枠が「リセットまで 4時間59分」、週枠が「リセット 5/24 9:49」の表示になっています。
+Hover any button for a tooltip.
 
-## 設定
+## Settings
 
-右端の ⚙ アイコンから開けます。
+Click the ⚙ icon on the right side rail.
 
-![設定ダイアログ](docs/settings.png)
+### General
+| Item | Default | Notes |
+|------|---------|-------|
+| Language | 日本語 | 日本語 / English |
+| Always on top | Disabled | |
+| Codex | Enabled | Show or hide this service |
+| Claude | Enabled | Show or hide this service |
 
-| 項目 | 初期値 |
-|------|--------|
-| 通常更新間隔 | 15分 |
-| ブースト時間 | 30分 |
-| ブースト更新間隔 | 1分 |
-| リセット前高頻度更新 | しない |
-| 　開始（分前） | 15分 |
-| 　間隔（分） | 1分 |
-| 表示サービス | Claude / Codex |
-| 配置 | 横 |
-| 表示モード（残量 / 使用量） | 残量 |
-| 5時間リセット表示（残り時間 / リセット時刻） | 残り時間 |
-| 週リセット表示（残り時間 / リセット時刻） | リセット時刻 |
-| 黄色になる残量 | 50% |
-| 赤になる残量 | 30% |
-| 文字サイズ | — |
-| 言語 | 日本語 |
-| 最前面に固定 | ON |
+### Layout
+| Item | Default | Notes |
+|------|---------|-------|
+| Arrangement | Wide | Wide (horizontal) / Tall (vertical) |
+| Codex value | Remaining | Remaining % or Used % |
+| Claude value | Remaining | Remaining % or Used % |
+| 5h reset display | Time left | Time left / Clock time |
+| Weekly reset display | Clock time | Time left / Clock time |
 
-リセット表示は、Claude と Codex の元ページで表記が違っていても、アプリ側で日時に変換してから設定に従って表示します。
+### Refresh
+| Item | Default |
+|------|---------|
+| Normal interval (min) | 15 |
+| Boost duration (min) | 30 |
+| Boost interval (min) | 1 |
 
-## ボタン
+### Thresholds
+| Item | Default | Notes |
+|------|---------|-------|
+| Yellow threshold (%) | 50 | Progress bar turns yellow when remaining ≤ this |
+| Red threshold (%) | 30 | Progress bar turns red when remaining ≤ this |
 
-| ボタン | 機能 |
-|--------|------|
-| ⚡ | ブースト（1分間隔の高頻度更新、30分間） |
-| ↻ | 今すぐ手動更新 |
-| × | 閉じる |
-| 📌 | 最前面固定のON/OFF |
-| ⚙ | 設定を開く |
+## How it works
 
-各ボタンにカーソルを合わせるとツールチップが表示されます。
+The app hosts two hidden WebView2 instances pointed at the Claude and Codex usage pages, scrapes the rendered text, parses out the percentages and reset times, and renders them with a custom dark-mode UI. Your login session lives inside the WebView2 user-data folder under `%LOCALAPPDATA%\AiUsageWebView2\`; the app does not transmit any credentials anywhere else.
+
+## Build from source
+
+```powershell
+.\build.ps1
+```
+
+Requires Windows + .NET Framework 4 (csc.exe path is hard-coded in `build.ps1`). The script fetches the WebView2 NuGet package on first run.
