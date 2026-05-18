@@ -1,6 +1,7 @@
 packages/
 bin/
 obj/
+releases/
 .vs/
 *.zip
 *.nupkg
