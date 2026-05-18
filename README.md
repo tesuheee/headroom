@@ -56,7 +56,7 @@ Each quota row is colored independently: normal rows use the service color, warn
 |---------|--------|
 | × | Close |
 | Pin | Toggle always on top |
-| R / U | Toggle Remaining / Used for visible services |
+| R / U | Toggle Rem / Used for visible services |
 | 5h | Toggle 5-hour reset between countdown and clock time |
 | Wk | Toggle weekly reset between countdown and clock time |
 | ⚙ | Open settings |
