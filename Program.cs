@@ -1460,12 +1460,12 @@ namespace AiUsageWebView2
             AddRow(leftCard, "最前面に固定", "Always on top", "", "", topMost, ref leftY);
             SetupCombo(showCodex,  settings.ShowCodex  ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             SetupCombo(showClaude, settings.ShowClaude ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
-            AddRow(leftCard, "Codex", "Codex", "", "", showCodex,  ref leftY);
-            AddRow(leftCard, "Claude", "Claude", "", "", showClaude, ref leftY);
+            AddRow(leftCard, "Codex 表示", "Codex display", "", "", showCodex,  ref leftY);
+            AddRow(leftCard, "Claude 表示", "Claude display", "", "", showClaude, ref leftY);
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
             AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
-            AddRow(leftCard, "Codex 数値", "Codex value", "残量 / 使用量", "remaining / used", codexMode, ref leftY);
-            AddRow(leftCard, "Claude 数値", "Claude value", "残量 / 使用量", "remaining / used", claudeMode, ref leftY);
+            AddRow(leftCard, "Codex トークン表示", "Codex token display", "残量 / 使用量", "remaining / used", codexMode, ref leftY);
+            AddRow(leftCard, "Claude トークン表示", "Claude token display", "残量 / 使用量", "remaining / used", claudeMode, ref leftY);
             AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
             AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
 
