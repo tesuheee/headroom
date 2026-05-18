@@ -858,7 +858,7 @@ namespace AiUsageWebView2
             string pctStr = empty ? "--" : pct.Value + "%";
             g.DrawString(pctStr, numFont, pctBrush, percentX, y - 4);
             int pctWidth = Math.Max(28, (int)g.MeasureString(pctStr, numFont).Width - 5);
-            int barX = percentX + pctWidth + 4;
+            int barX = percentX + pctWidth + 12;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, pct, rowColor);
