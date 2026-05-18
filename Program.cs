@@ -707,15 +707,7 @@ namespace AiUsageWebView2
                 if (stale)
                     DrawBadge(g, T("古い", "Stale"), x + 100, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50));
                 if (exhausted)
-                {
                     DrawBadge(g, T("上限", "Limit"), x + 100, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100));
-                    string limitReset = LimitResetText(state.Data, fiveRemain, weekRemain, English);
-                    if (limitReset.Length > 0)
-                    {
-                        using (var badgeText = new Font("Segoe UI", 8.5f, FontStyle.Regular))
-                            g.DrawString(limitReset, badgeText, dim, x + 140, y + 16);
-                    }
-                }
                 DrawCardControls(g, state, x, y, w, keyPrefix);
 
                 if (!state.Data.HasAnyValue())
@@ -859,7 +851,13 @@ namespace AiUsageWebView2
 
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
-                g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
+            {
+                if (limit)
+                    using (var boldReset = new Font(resetFont, FontStyle.Bold))
+                        g.DrawString(reset, boldReset, white, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
+                else
+                    g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
+            }
             }
         }
 
