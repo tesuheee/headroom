@@ -1279,19 +1279,19 @@ namespace AiUsageWebView2
         readonly ComboBox claudeMode = new ComboBox();
         readonly ComboBox fiveResetMode = new ComboBox();
         readonly ComboBox weeklyResetMode = new ComboBox();
-        readonly NumericUpDown normal = new NumericUpDown();
-        readonly NumericUpDown boostDuration = new NumericUpDown();
-        readonly NumericUpDown boostInterval = new NumericUpDown();
-        readonly NumericUpDown finalWindow = new NumericUpDown();
-        readonly NumericUpDown finalInterval = new NumericUpDown();
+        readonly TextBox normal = new TextBox();
+        readonly TextBox boostDuration = new TextBox();
+        readonly TextBox boostInterval = new TextBox();
+        readonly TextBox finalWindow = new TextBox();
+        readonly TextBox finalInterval = new TextBox();
         readonly CheckBox topMost = new CheckBox();
         readonly CheckBox showCodex = new CheckBox();
         readonly CheckBox showClaude = new CheckBox();
-        readonly NumericUpDown labelSize = new NumericUpDown();
-        readonly NumericUpDown percentSize = new NumericUpDown();
-        readonly NumericUpDown resetSize = new NumericUpDown();
-        readonly NumericUpDown warningPercent = new NumericUpDown();
-        readonly NumericUpDown criticalPercent = new NumericUpDown();
+        readonly TextBox labelSize = new TextBox();
+        readonly TextBox percentSize = new TextBox();
+        readonly TextBox resetSize = new TextBox();
+        readonly TextBox warningPercent = new TextBox();
+        readonly TextBox criticalPercent = new TextBox();
         readonly TextBox warningColor = new TextBox();
         readonly TextBox criticalColor = new TextBox();
 
@@ -1302,7 +1302,7 @@ namespace AiUsageWebView2
             this.preview = preview;
             Text = T("設定", "Settings");
             Width = 900;
-            Height = 720;
+            Height = 730;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -1322,47 +1322,56 @@ namespace AiUsageWebView2
             };
             Controls.Add(title);
 
-            var card = new Panel
+            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 230, 20), Width = 96, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(43, 43, 46), ForeColor = Color.FromArgb(215, 218, 224), Font = new Font("Segoe UI", 10f) };
+            cancel.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 76);
+            cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(55, 55, 60);
+            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 126, 20), Width = 90, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(120, 82, 238), ForeColor = Color.White, Font = new Font("Segoe UI", 10f, FontStyle.Bold) };
+            ok.FlatAppearance.BorderColor = Color.FromArgb(140, 100, 255);
+            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(138, 96, 255);
+            ok.Click += (s, e) =>
             {
-                Location = new Point(24, 64),
-                Width = Width - 64,
-                Height = Height - 150,
-                BackColor = Color.FromArgb(30, 30, 32),
-                AutoScroll = true
+                ApplyToSettings();
             };
-            Controls.Add(card);
+            Controls.Add(cancel);
+            Controls.Add(ok);
 
-            int y = 18;
-            AddSection(card, T("表示", "Display"), ref y);
-            AddRow(card, T("表示するサービス", "Visible services"), T("使っているサービスだけをカードに表示します。", "Choose which services appear in the widget."), ServicePicker(), ref y);
-            AddRow(card, T("配置", "Layout"), T("2つのサービスを横または縦に並べます。", "Arrange service cards side by side or stacked."), layoutMode, ref y);
-            AddRow(card, "Codex " + T("表示", "display"), T("Codexの数値を残量または使用量で表示します。", "Show Codex as remaining or used."), codexMode, ref y);
-            AddRow(card, "Claude " + T("表示", "display"), T("Claudeの数値を残量または使用量で表示します。", "Show Claude as remaining or used."), claudeMode, ref y);
-            AddRow(card, T("5時間リセット", "5h reset"), T("5時間枠のリセットを時刻または残り時間で表示します。", "Show the 5-hour reset as a clock time or time left."), fiveResetMode, ref y);
-            AddRow(card, T("週リセット", "Weekly reset"), T("週間枠のリセットを時刻または残り時間で表示します。", "Show the weekly reset as a clock time or time left."), weeklyResetMode, ref y);
+            var leftCard = SettingsCard(24, 68, 414, Height - 104);
+            var rightCard = SettingsCard(454, 68, 410, Height - 104);
+            Controls.Add(leftCard);
+            Controls.Add(rightCard);
 
-            AddSection(card, T("更新", "Refresh"), ref y);
-            AddRow(card, T("通常更新間隔", "Normal refresh"), T("ブーストしていない時の更新間隔です。", "Refresh interval when boost is off."), normal, ref y);
-            AddRow(card, T("ブースト時間", "Boost duration"), T("高頻度更新を続ける時間です。", "How long high-frequency refresh stays on."), boostDuration, ref y);
-            AddRow(card, T("ブースト更新間隔", "Boost refresh"), T("ブースト中の更新間隔です。", "Refresh interval while boosted."), boostInterval, ref y);
-            AddRow(card, T("直前更新開始", "Final window"), T("リセット直前に更新間隔を短くし始める時間です。", "When to start faster refresh before reset."), finalWindow, ref y);
-            AddRow(card, T("直前更新間隔", "Final interval"), T("リセット直前の更新間隔です。", "Refresh interval near reset."), finalInterval, ref y);
+            int leftY = 18;
+            AddSection(leftCard, T("表示", "Display"), ref leftY);
+            AddRow(leftCard, T("表示するサービス", "Visible services"), T("使っているサービスだけを表示します。", "Choose services to show."), ServicePicker(), ref leftY);
+            AddRow(leftCard, T("配置", "Layout"), T("2つのサービスの並べ方です。", "Arrange two service cards."), layoutMode, ref leftY);
+            AddRow(leftCard, "Codex " + T("表示", "display"), T("Codexを残量または使用量で表示します。", "Show Codex as remaining or used."), codexMode, ref leftY);
+            AddRow(leftCard, "Claude " + T("表示", "display"), T("Claudeを残量または使用量で表示します。", "Show Claude as remaining or used."), claudeMode, ref leftY);
+            AddRow(leftCard, T("5時間リセット", "5h reset"), T("5時間枠のリセット表示です。", "Display for 5-hour reset."), fiveResetMode, ref leftY);
+            AddRow(leftCard, T("週リセット", "Weekly reset"), T("週間枠のリセット表示です。", "Display for weekly reset."), weeklyResetMode, ref leftY);
 
-            AddSection(card, T("見た目", "Appearance"), ref y);
-            AddRow(card, T("ラベル文字", "Label text"), T("5時間・週などのラベルの文字サイズです。", "Font size for row labels."), labelSize, ref y);
-            AddRow(card, T("パーセント文字", "Percent text"), T("残量・使用量の数字の文字サイズです。", "Font size for percentage values."), percentSize, ref y);
-            AddRow(card, T("リセット文字", "Reset text"), T("リセット表示の文字サイズです。", "Font size for reset text."), resetSize, ref y);
-            AddNumberWithColor(card, T("黄色になる残量", "Yellow threshold"), T("この残量以下で黄色表示にします。", "Turn yellow at or below this remaining percent."), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref y, 1, 99);
-            AddNumberWithColor(card, T("赤になる残量", "Red threshold"), T("この残量以下で赤表示にします。", "Turn red at or below this remaining percent."), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref y, 1, 99);
-
-            AddSection(card, T("一般", "General"), ref y);
-            AddRow(card, T("言語", "Language"), T("設定画面とウィジェットの表示言語です。", "Display language for settings and widget."), language, ref y);
+            AddSection(leftCard, T("一般", "General"), ref leftY);
+            AddRow(leftCard, T("言語", "Language"), T("表示言語です。", "Display language."), language, ref leftY);
             topMost.Text = T("有効", "Enabled");
             topMost.Checked = settings.AlwaysOnTop;
             topMost.Width = 180;
             topMost.FlatStyle = FlatStyle.Flat;
             topMost.ForeColor = Color.FromArgb(225, 228, 235);
-            AddRow(card, T("最前面に固定", "Always on top"), T("他のウィンドウより前に表示します。", "Keep the widget above other windows."), topMost, ref y);
+            AddRow(leftCard, T("最前面に固定", "Always on top"), T("他のウィンドウより前に表示します。", "Keep above other windows."), topMost, ref leftY);
+
+            int rightY = 18;
+            AddSection(rightCard, T("更新", "Refresh"), ref rightY);
+            AddRow(rightCard, T("通常更新間隔", "Normal refresh"), T("ブーストしていない時の更新間隔です。", "Refresh interval when boost is off."), normal, ref rightY);
+            AddRow(rightCard, T("ブースト時間", "Boost duration"), T("高頻度更新を続ける時間です。", "How long boost stays on."), boostDuration, ref rightY);
+            AddRow(rightCard, T("ブースト更新間隔", "Boost refresh"), T("ブースト中の更新間隔です。", "Refresh interval while boosted."), boostInterval, ref rightY);
+            AddRow(rightCard, T("直前更新開始", "Final window"), T("リセット直前に更新を速める時間です。", "Start faster refresh before reset."), finalWindow, ref rightY);
+            AddRow(rightCard, T("直前更新間隔", "Final interval"), T("リセット直前の更新間隔です。", "Refresh interval near reset."), finalInterval, ref rightY);
+
+            AddSection(rightCard, T("見た目", "Appearance"), ref rightY);
+            AddRow(rightCard, T("ラベル文字", "Label text"), T("5時間・週などの文字サイズです。", "Font size for row labels."), labelSize, ref rightY);
+            AddRow(rightCard, T("パーセント文字", "Percent text"), T("残量・使用量の数字サイズです。", "Font size for percentage values."), percentSize, ref rightY);
+            AddRow(rightCard, T("リセット文字", "Reset text"), T("リセット表示の文字サイズです。", "Font size for reset text."), resetSize, ref rightY);
+            AddNumberWithColor(rightCard, T("黄色になる残量", "Yellow threshold"), T("この残量以下で黄色表示にします。", "Turn yellow at or below this percent."), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, T("赤になる残量", "Red threshold"), T("この残量以下で赤表示にします。", "Turn red at or below this percent."), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -1372,19 +1381,6 @@ namespace AiUsageWebView2
             SetupCombo(language, settings.Language, new[] { "日本語", "English" });
             SetupNumbers();
 
-            int btnY = Height - 70;
-            var ok = new Button { Text = T("保存", "Save"), DialogResult = DialogResult.OK, Location = new Point(Width - 222, btnY), Width = 90, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(120, 82, 238), ForeColor = Color.White, Font = new Font("Segoe UI", 10f, FontStyle.Bold) };
-            ok.FlatAppearance.BorderColor = Color.FromArgb(140, 100, 255);
-            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(138, 96, 255);
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(Width - 124, btnY), Width = 96, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(43, 43, 46), ForeColor = Color.FromArgb(215, 218, 224), Font = new Font("Segoe UI", 10f) };
-            cancel.FlatAppearance.BorderColor = Color.FromArgb(70, 70, 76);
-            cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(55, 55, 60);
-            ok.Click += (s, e) =>
-            {
-                ApplyToSettings();
-            };
-            Controls.Add(ok);
-            Controls.Add(cancel);
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -1418,21 +1414,32 @@ namespace AiUsageWebView2
                 ForeColor = Color.FromArgb(235, 238, 244)
             };
             parent.Controls.Add(label);
-            y += 32;
+            y += 28;
         }
 
         void AddRow(Panel parent, string title, string description, Control control, ref int y)
         {
-            int rowH = 66;
-            var titleLabel = new Label { Text = title, Location = new Point(20, y + 9), Width = 360, Height = 20, Font = new Font("Segoe UI", 9.8f, FontStyle.Bold), ForeColor = Color.FromArgb(235, 238, 244) };
-            var descLabel = new Label { Text = description, Location = new Point(20, y + 31), Width = 440, Height = 22, ForeColor = Color.FromArgb(170, 176, 186) };
-            control.Location = new Point(parent.Width - 210, y + 16);
+            int rowH = 54;
+            var titleLabel = new Label { Text = title, Location = new Point(20, y + 6), Width = 178, Height = 20, Font = new Font("Segoe UI", 9.5f, FontStyle.Bold), ForeColor = Color.FromArgb(235, 238, 244) };
+            var descLabel = new Label { Text = description, Location = new Point(20, y + 27), Width = 180, Height = 20, Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(170, 176, 186) };
+            control.Location = new Point(parent.Width - 198, y + 12);
             parent.Controls.Add(titleLabel);
             parent.Controls.Add(descLabel);
             parent.Controls.Add(control);
             var line = new Panel { Location = new Point(20, y + rowH - 1), Width = parent.Width - 40, Height = 1, BackColor = Color.FromArgb(47, 47, 51) };
             parent.Controls.Add(line);
             y += rowH;
+        }
+
+        Panel SettingsCard(int x, int y, int width, int height)
+        {
+            return new Panel
+            {
+                Location = new Point(x, y),
+                Width = width,
+                Height = height,
+                BackColor = Color.FromArgb(30, 30, 32)
+            };
         }
 
         Panel ServicePicker()
@@ -1455,11 +1462,12 @@ namespace AiUsageWebView2
             box.ForeColor = Color.FromArgb(225, 228, 235);
         }
 
-        void AddNumberWithColor(Panel parent, string title, string description, NumericUpDown box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
+        void AddNumberWithColor(Panel parent, string title, string description, TextBox box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
         {
             var panel = new Panel { Width = 190, Height = 34, BackColor = Color.Transparent };
             StyleNumber(box, value, min, max);
             box.Location = new Point(0, 0);
+            box.Width = 84;
             colorBox.Text = colorValue;
             colorBox.Location = new Point(96, 0);
             colorBox.Width = 84;
@@ -1473,16 +1481,30 @@ namespace AiUsageWebView2
         {
             box.DropDownStyle = ComboBoxStyle.DropDownList;
             box.FlatStyle = FlatStyle.Flat;
+            box.DrawMode = DrawMode.OwnerDrawFixed;
+            box.ItemHeight = 24;
             box.BackColor = Color.FromArgb(47, 47, 50);
             box.ForeColor = Color.FromArgb(235, 238, 244);
             box.Width = 180;
             box.Height = 30;
             box.Items.Clear();
             box.Items.AddRange(items);
+            box.DrawItem -= DrawComboItem;
+            box.DrawItem += DrawComboItem;
             if (box == layoutMode) box.SelectedIndex = string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == codexMode || box == claudeMode) box.SelectedIndex = string.Equals(value, "used", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == language) box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        }
+
+        void DrawComboItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            using (var bg = new SolidBrush(selected ? Color.FromArgb(70, 70, 76) : Color.FromArgb(47, 47, 50)))
+                e.Graphics.FillRectangle(bg, e.Bounds);
+            using (var text = new SolidBrush(Color.FromArgb(235, 238, 244)))
+                e.Graphics.DrawString(((ComboBox)sender).Items[e.Index].ToString(), e.Font, text, e.Bounds.X + 8, e.Bounds.Y + 4);
         }
 
         void SetupNumbers()
@@ -1497,16 +1519,22 @@ namespace AiUsageWebView2
             StyleNumber(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
         }
 
-        void StyleNumber(NumericUpDown box, int value, int min, int max)
+        void StyleNumber(TextBox box, int value, int min, int max)
         {
-            box.Minimum = min;
-            box.Maximum = max;
-            box.Value = Math.Max(min, Math.Min(max, value));
+            box.Text = Math.Max(min, Math.Min(max, value)).ToString();
             box.Width = 180;
             box.Height = 30;
+            box.TextAlign = HorizontalAlignment.Right;
             box.BackColor = Color.FromArgb(47, 47, 50);
             box.ForeColor = Color.FromArgb(235, 238, 244);
             box.BorderStyle = BorderStyle.FixedSingle;
+        }
+
+        static int ReadBoxInt(TextBox box, int fallback, int min, int max)
+        {
+            int value;
+            if (!int.TryParse(box.Text.Trim(), out value)) return fallback;
+            return Math.Max(min, Math.Min(max, value));
         }
 
         void StyleTextBox(TextBox box)
@@ -1523,12 +1551,12 @@ namespace AiUsageWebView2
                 ApplyToSettings();
                 preview();
             };
-            normal.ValueChanged += apply;
+            normal.TextChanged += apply;
             language.SelectedIndexChanged += apply;
-            boostDuration.ValueChanged += apply;
-            boostInterval.ValueChanged += apply;
-            finalWindow.ValueChanged += apply;
-            finalInterval.ValueChanged += apply;
+            boostDuration.TextChanged += apply;
+            boostInterval.TextChanged += apply;
+            finalWindow.TextChanged += apply;
+            finalInterval.TextChanged += apply;
             showCodex.CheckedChanged += apply;
             showClaude.CheckedChanged += apply;
             layoutMode.SelectedIndexChanged += apply;
@@ -1536,11 +1564,11 @@ namespace AiUsageWebView2
             claudeMode.SelectedIndexChanged += apply;
             fiveResetMode.SelectedIndexChanged += apply;
             weeklyResetMode.SelectedIndexChanged += apply;
-            labelSize.ValueChanged += apply;
-            percentSize.ValueChanged += apply;
-            resetSize.ValueChanged += apply;
-            warningPercent.ValueChanged += apply;
-            criticalPercent.ValueChanged += apply;
+            labelSize.TextChanged += apply;
+            percentSize.TextChanged += apply;
+            resetSize.TextChanged += apply;
+            warningPercent.TextChanged += apply;
+            criticalPercent.TextChanged += apply;
             topMost.CheckedChanged += apply;
             warningColor.TextChanged += apply;
             criticalColor.TextChanged += apply;
@@ -1548,12 +1576,12 @@ namespace AiUsageWebView2
 
         void ApplyToSettings()
         {
-            settings.NormalIntervalMinutes = (int)normal.Value;
+            settings.NormalIntervalMinutes = ReadBoxInt(normal, settings.NormalIntervalMinutes, 1, 240);
             settings.Language = language.SelectedIndex == 1 ? "en" : "ja";
-            settings.BoostDurationMinutes = (int)boostDuration.Value;
-            settings.BoostIntervalMinutes = (int)boostInterval.Value;
-            settings.FinalRefreshWindowMinutes = (int)finalWindow.Value;
-            settings.FinalRefreshIntervalMinutes = (int)finalInterval.Value;
+            settings.BoostDurationMinutes = ReadBoxInt(boostDuration, settings.BoostDurationMinutes, 1, 240);
+            settings.BoostIntervalMinutes = ReadBoxInt(boostInterval, settings.BoostIntervalMinutes, 1, 240);
+            settings.FinalRefreshWindowMinutes = ReadBoxInt(finalWindow, settings.FinalRefreshWindowMinutes, 1, 120);
+            settings.FinalRefreshIntervalMinutes = ReadBoxInt(finalInterval, settings.FinalRefreshIntervalMinutes, 1, 30);
             if (!showCodex.Checked && !showClaude.Checked) showClaude.Checked = true;
             settings.ShowCodex = showCodex.Checked;
             settings.ShowClaude = showClaude.Checked;
@@ -1562,11 +1590,13 @@ namespace AiUsageWebView2
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
             settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "relative" : "time";
             settings.WeeklyResetMode = weeklyResetMode.SelectedIndex == 1 ? "relative" : "time";
-            settings.LabelFontSize = (float)labelSize.Value;
-            settings.PercentFontSize = (float)percentSize.Value;
-            settings.ResetFontSize = (float)resetSize.Value;
-            settings.WarningRemainingPercent = Math.Max((int)criticalPercent.Value, (int)warningPercent.Value);
-            settings.CriticalRemainingPercent = Math.Min((int)criticalPercent.Value, settings.WarningRemainingPercent);
+            settings.LabelFontSize = ReadBoxInt(labelSize, (int)Math.Round(settings.LabelFontSize), 6, 32);
+            settings.PercentFontSize = ReadBoxInt(percentSize, (int)Math.Round(settings.PercentFontSize), 8, 42);
+            settings.ResetFontSize = ReadBoxInt(resetSize, (int)Math.Round(settings.ResetFontSize), 6, 32);
+            int warning = ReadBoxInt(warningPercent, settings.WarningRemainingPercent, 1, 99);
+            int critical = ReadBoxInt(criticalPercent, settings.CriticalRemainingPercent, 1, 99);
+            settings.WarningRemainingPercent = Math.Max(critical, warning);
+            settings.CriticalRemainingPercent = Math.Min(critical, settings.WarningRemainingPercent);
             settings.WarningColor = NormalizeColorText(warningColor.Text, settings.WarningColor);
             settings.CriticalColor = NormalizeColorText(criticalColor.Text, settings.CriticalColor);
             settings.AlwaysOnTop = topMost.Checked;
