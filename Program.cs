@@ -653,28 +653,28 @@ namespace Headroom
             g.Clear(Color.Black);
             hits.Clear();
 
-            int y = 8;
+            int y = 0;
             int gap = 10;
             int sideRail = 16;
             var visible = VisibleServices();
-            int railLeft = ClientSize.Width - sideRail - 18;
-            int contentW = Math.Max(240, railLeft - 10);
-            int contentH = Math.Max(110, ClientSize.Height - y - 8);
+            int railLeft = ClientSize.Width - sideRail - 14;
+            int contentW = Math.Max(240, railLeft);
+            int contentH = Math.Max(110, ClientSize.Height);
             if (visible.Count == 1)
             {
-                DrawService(g, visible[0].Item1, 10, y, contentW, contentH, visible[0].Item2);
+                DrawService(g, visible[0].Item1, 0, y, contentW, contentH, visible[0].Item2);
             }
             else if (string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase))
             {
                 int cardH = Math.Max(110, (contentH - gap) / 2);
-                DrawService(g, visible[0].Item1, 10, y, contentW, cardH, visible[0].Item2);
-                DrawService(g, visible[1].Item1, 10, y + cardH + gap, contentW, cardH, visible[1].Item2);
+                DrawService(g, visible[0].Item1, 0, y, contentW, cardH, visible[0].Item2);
+                DrawService(g, visible[1].Item1, 0, y + cardH + gap, contentW, cardH, visible[1].Item2);
             }
             else
             {
                 int cardW = Math.Max(240, (contentW - gap) / 2);
-                DrawService(g, visible[0].Item1, 10, y, cardW, contentH, visible[0].Item2);
-                DrawService(g, visible[1].Item1, 10 + cardW + gap, y, cardW, contentH, visible[1].Item2);
+                DrawService(g, visible[0].Item1, 0, y, cardW, contentH, visible[0].Item2);
+                DrawService(g, visible[1].Item1, cardW + gap, y, cardW, contentH, visible[1].Item2);
             }
             DrawSideRail(g);
             DrawResizeGrip(g);
@@ -693,9 +693,9 @@ namespace Headroom
         {
             bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
             bool twoServices = settings.ShowClaude && settings.ShowCodex;
-            if (twoServices && vertical)  MinimumSize = new Size(360, 270);
-            else if (twoServices)         MinimumSize = new Size(640, 136);
-            else                          MinimumSize = new Size(300, 136);
+            if (twoServices && vertical)  MinimumSize = new Size(270, 230);
+            else if (twoServices)         MinimumSize = new Size(520, 110);
+            else                          MinimumSize = new Size(270, 110);
             if (Width < MinimumSize.Width) Width = MinimumSize.Width;
             if (Height < MinimumSize.Height) Height = MinimumSize.Height;
         }
@@ -705,11 +705,11 @@ namespace Headroom
             bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
             bool twoServices = settings.ShowClaude && settings.ShowCodex;
             int idealW, idealH;
-            // card unit = 360px: vertical W=404, horizontal W=2*360+10+44=774
-            // vertical H: 2*(170-16) + 10 + 16 = 334 keeps each card the same height as single
-            if      (twoServices && !vertical) { idealW = 774; idealH = 170; }
-            else if (twoServices)              { idealW = 404; idealH = 334; }
-            else                               { idealW = 404; idealH = 170; }
+            // card unit = 360px: W = 360+30 = 390; horizontal W = 2*360+10+30 = 760; H = 154
+            // vertical H: 2*154+10 = 318
+            if      (twoServices && !vertical) { idealW = 760; idealH = 154; }
+            else if (twoServices)              { idealW = 390; idealH = 318; }
+            else                               { idealW = 390; idealH = 154; }
             Width  = Math.Max(MinimumSize.Width,  idealW);
             Height = Math.Max(MinimumSize.Height, idealH);
             settings.Width  = Width;
@@ -2030,7 +2030,7 @@ namespace Headroom
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
-        public bool AlwaysOnTop = true;
+        public bool AlwaysOnTop = false;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
         public string LayoutMode = "horizontal";
