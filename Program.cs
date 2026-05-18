@@ -195,12 +195,18 @@ namespace Headroom
             if (!fiveEmpty && !weekEmpty) return false;
 
             TimeSpan rem;
-            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset) &&
-                TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                return true;
-            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset) &&
-                TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                return true;
+            if (fiveEmpty)
+            {
+                if (string.IsNullOrEmpty(data.FiveHourReset)) return true;
+                if (TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
+                    return true;
+            }
+            if (weekEmpty)
+            {
+                if (string.IsNullOrEmpty(data.WeeklyReset)) return true;
+                if (TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
+                    return true;
+            }
             return false;
         }
 
@@ -2435,6 +2441,7 @@ namespace Headroom
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            g.Clear(Parent != null ? Parent.BackColor : Color.FromArgb(14, 14, 18));
 
             int d = Math.Max(1, CornerRadius * 2);
             int w = Width - 1, h = Height - 1;
