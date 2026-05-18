@@ -984,7 +984,7 @@ namespace Headroom
             Color numColor = Color.FromArgb(240, 242, 248);
             using (var pctBrush = new SolidBrush(numColor))
             {
-            int labelX = x + 6;
+            int labelX = x + 12;
             int label5hW = (int)Math.Ceiling(g.MeasureString(T("5時間", "5h"), labelFont).Width);
             int labelWkW = (int)Math.Ceiling(g.MeasureString(T("週", "Week"), labelFont).Width);
             int maxLabelW = Math.Max(label5hW, labelWkW);
@@ -1006,9 +1006,9 @@ namespace Headroom
                 pctFormat.FormatFlags = StringFormatFlags.NoWrap;
                 g.DrawString(pctStr, numFont, pctBrush, new RectangleF(percentX, y - 4, pctColW + 4, numFont.Height + 4), pctFormat);
             }
-            int barX = percentX + pctColW + 8;
+            int barX = percentX + pctColW + 4;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
-            int barW = Math.Max(70, w - (barX - x) - 10);
+            int barW = Math.Max(70, w - (barX - x) - 14);
             DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
 
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
