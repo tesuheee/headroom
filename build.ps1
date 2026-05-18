@@ -25,11 +25,15 @@ if (-not (Test-Path $WinForms) -or -not (Test-Path $Core) -or -not (Test-Path $L
 
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
-Copy-Item $WinForms $Out -Force
-Copy-Item $Core $Out -Force
-Copy-Item $Loader $Out -Force
+$OutWinForms = Join-Path $Out (Split-Path $WinForms -Leaf)
+$OutCore = Join-Path $Out (Split-Path $Core -Leaf)
+$OutLoader = Join-Path $Out (Split-Path $Loader -Leaf)
 
-$Exe = Join-Path $Out "AiUsageWebView2.exe"
+Copy-Item $WinForms $OutWinForms -Force
+Copy-Item $Core $OutCore -Force
+Copy-Item $Loader $OutLoader -Force
+
+$Exe = Join-Path $Out "Headroom.exe"
 $Source = Join-Path $PSScriptRoot "Program.cs"
 $CscArgs = @(
   "/nologo",
@@ -66,9 +70,9 @@ if (Test-Path $thumbprintFile) {
     }
 }
 
-$ZipName = if ($Version) { "AiUsageWebView2-v$Version.zip" } else { "AiUsageWebView2.zip" }
+$ZipName = if ($Version) { "Headroom-v$Version.zip" } else { "Headroom.zip" }
 $ZipPath = Join-Path $PSScriptRoot $ZipName
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-$PackageFiles = Get-ChildItem $Out -File | Where-Object { $_.Name -ne "settings.json" }
-Compress-Archive -Path $PackageFiles.FullName -DestinationPath $ZipPath
+$PackageFiles = @($Exe, $OutWinForms, $OutCore, $OutLoader)
+Compress-Archive -Path $PackageFiles -DestinationPath $ZipPath
 "Packaged: $ZipPath"

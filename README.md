@@ -1,19 +1,19 @@
 [**English**] · [日本語](README.ja.md)
 
-# AI Usage Monitor
+# Headroom
 
-A floating Windows desktop widget that shows your remaining Claude and Codex quotas at a glance.
+A floating Windows desktop widget that shows how much Claude and Codex quota headroom you have left.
 
 ## Features
 
 - **Side-by-side monitoring** — Claude and Codex, both 5-hour and weekly quotas, in one always-on-top widget
 - **Flexible display** — per-service remaining/used switch, horizontal or vertical layout, reset shown as countdown or clock time
-- **Low-quota warnings** — progress bar turns yellow then red as remaining quota drops past configurable thresholds
+- **Low-quota and limit warnings** — progress bars turn yellow/red at configurable thresholds, with a clear limit state when quota is exhausted
 
 ## Getting Started
 
-1. Download the latest `AiUsageWebView2.zip` from Releases and unzip anywhere.
-2. Run `AiUsageWebView2.exe`.
+1. Download the latest `Headroom.zip` from Releases and unzip anywhere.
+2. Run `Headroom.exe`.
 3. On first launch, click **Login** on each card and sign in to Claude / Codex through the embedded browser. Sessions persist locally; subsequent launches fetch usage automatically.
 
 > Requires the WebView2 Runtime (preinstalled on Windows 11 and recent Windows 10).
@@ -42,6 +42,12 @@ Toggle from the side rail, or via **Settings → Layout**.
 
 Each service has its own **Remaining / Used** switch. Reset can be a countdown ("3h 53m left") or an absolute clock time ("5/25 0:59"), set independently for 5-hour and weekly. Different phrasings on Claude and Codex pages are normalized so the format stays consistent.
 
+### Limit reached
+
+![Limit reached](docs/05-limit-reached.png)
+
+When a quota is exhausted, the affected card is highlighted with a limit badge and warning color so it is visible at a glance.
+
 ## Buttons
 
 | Button | Action |
@@ -64,7 +70,7 @@ Open with the ⚙ icon on the side rail.
 
 ## How it works
 
-The app hosts two hidden WebView2 instances pointed at the Claude and Codex usage pages, parses the rendered text, and renders a custom dark UI. Login sessions live in the WebView2 user-data folder under `%LOCALAPPDATA%\AiUsageWebView2\`; credentials are not sent anywhere else.
+The app hosts two hidden WebView2 instances pointed at the Claude and Codex usage pages, parses the rendered text, and renders a custom dark UI. Login sessions live in the WebView2 user-data folder under `%LOCALAPPDATA%\Headroom\`; credentials are not sent anywhere else. Existing sessions from older `AiUsageWebView2` builds are copied forward automatically on first launch.
 
 ## Build from source
 

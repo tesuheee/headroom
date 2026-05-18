@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace AiUsageWebView2
+namespace Headroom
 {
     static class Program
     {
@@ -54,6 +54,7 @@ namespace AiUsageWebView2
         Size resizeStartSize;
         string hoverKey = "";
         int spinnerFrame;
+        int paintSubtick;
         const float LabelFontSize   = 10.8f;
         const float PercentFontSize = 16.5f;
         const float ResetFontSize   =  9.9f;
@@ -64,7 +65,7 @@ namespace AiUsageWebView2
 
         public UsageForm()
         {
-            Text = "AI Usage";
+            Text = "Headroom";
             Width = settings.Width;
             Height = settings.Height;
             ApplyLayoutMinimumSize();
@@ -100,10 +101,13 @@ namespace AiUsageWebView2
                 if (e.KeyCode == Keys.S || e.KeyCode == Keys.F2) ShowSettingsDialog();
             };
 
-            paintTimer.Interval = 250;
+            paintTimer.Interval = 40;
             paintTimer.Tick += (s, e) =>
             {
-                spinnerFrame = (spinnerFrame + 1) % 4;
+                paintSubtick = (paintSubtick + 1) % 6;
+                if (paintSubtick == 0) spinnerFrame = (spinnerFrame + 1) % 4;
+                UpdateBarAnimation(codex,  settings.CodexShowUsed);
+                UpdateBarAnimation(claude, settings.ClaudeShowUsed);
                 Invalidate();
             };
             paintTimer.Start();
@@ -130,13 +134,38 @@ namespace AiUsageWebView2
         async Task InitializeWebViewsAsync()
         {
             if (webEnv != null) return;
-            string userData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AiUsageWebView2", "WebView2Profile");
+            string userData = WebViewUserDataPath();
             Directory.CreateDirectory(userData);
             webEnv = await CoreWebView2Environment.CreateAsync(null, userData);
             await claudeView.EnsureCoreWebView2Async(webEnv);
             await codexView.EnsureCoreWebView2Async(webEnv);
+        }
+
+        static string WebViewUserDataPath()
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string current = Path.Combine(local, "Headroom", "WebView2Profile");
+            string legacy = Path.Combine(local, "AiUsageWebView2", "WebView2Profile");
+            if (!Directory.Exists(current) && Directory.Exists(legacy))
+            {
+                try { CopyDirectory(legacy, current); }
+                catch { }
+            }
+            return current;
+        }
+
+        static void CopyDirectory(string source, string destination)
+        {
+            Directory.CreateDirectory(destination);
+            foreach (string dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+                Directory.CreateDirectory(Path.Combine(destination, dir.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+            foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            {
+                string relative = file.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string target = Path.Combine(destination, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(file, target, false);
+            }
         }
 
         async Task RunScheduledRefreshAsync()
@@ -160,6 +189,36 @@ namespace AiUsageWebView2
         {
             if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
             return settings.NormalIntervalMinutes;
+        }
+
+        static void UpdateBarAnimation(ServiceState svc, bool showUsed)
+        {
+            const double EaseFactor = 0.18;
+            const double SnapThreshold = 0.08;
+            int? target5 = svc.Data.FiveHourDisplayPercent(showUsed);
+            int? targetW = svc.Data.WeeklyDisplayPercent(showUsed);
+            if (target5.HasValue)
+            {
+                if (!svc.DisplayedFivePct.HasValue) svc.DisplayedFivePct = 0;
+                double cur = svc.DisplayedFivePct.Value;
+                double diff = target5.Value - cur;
+                svc.DisplayedFivePct = Math.Abs(diff) < SnapThreshold ? (double)target5.Value : cur + diff * EaseFactor;
+            }
+            else
+            {
+                svc.DisplayedFivePct = null;
+            }
+            if (targetW.HasValue)
+            {
+                if (!svc.DisplayedWeekPct.HasValue) svc.DisplayedWeekPct = 0;
+                double cur = svc.DisplayedWeekPct.Value;
+                double diff = targetW.Value - cur;
+                svc.DisplayedWeekPct = Math.Abs(diff) < SnapThreshold ? (double)targetW.Value : cur + diff * EaseFactor;
+            }
+            else
+            {
+                svc.DisplayedWeekPct = null;
+            }
         }
 
         async Task RefreshAllAsync(bool manual)
@@ -756,8 +815,8 @@ namespace AiUsageWebView2
                 int rowGap = Math.Max(2, Math.Min(10, free / 4));
                 int firstY = contentTop + topPad;
                 int secondY = firstY + rowHeight + rowGap;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, accent, label, reset, num, white, muted, dim);
-                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
         }
 
@@ -853,7 +912,7 @@ namespace AiUsageWebView2
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
@@ -880,7 +939,7 @@ namespace AiUsageWebView2
             int barX = percentX + pctWidth + 12;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 10);
-            DrawBar(g, barX, barY, barW, 9, pct, rowColor);
+            DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
 
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
@@ -1262,7 +1321,7 @@ namespace AiUsageWebView2
             }
         }
 
-        static void DrawBar(Graphics g, int x, int y, int w, int h, int? pct, Color accent)
+        static void DrawBar(Graphics g, int x, int y, int w, int h, double? pct, Color accent)
         {
             int barH = Math.Max(h, 9);
             // Track background with subtle inset
@@ -1274,7 +1333,8 @@ namespace AiUsageWebView2
                     g.DrawPath(inset, bgPath);
             }
             if (!pct.HasValue) return;
-            int fillW = Math.Max(pct.Value <= 0 ? 0 : 6, (int)Math.Round(w * Math.Max(0, Math.Min(100, pct.Value)) / 100.0));
+            double clamped = Math.Max(0, Math.Min(100, pct.Value));
+            int fillW = Math.Max(clamped <= 0 ? 0 : 6, (int)Math.Round(w * clamped / 100.0));
             if (fillW <= 0) return;
 
             // Glow beneath the bar
@@ -1350,7 +1410,7 @@ namespace AiUsageWebView2
 
         static void WriteDebug(string name, string text)
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ai-usage-widget");
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom");
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, name), text ?? "");
         }
@@ -1864,6 +1924,8 @@ namespace AiUsageWebView2
         public bool IsRefreshing;
         public DateTime LastRefresh = DateTime.MinValue;
         public DateTime? BoostUntil;
+        public double? DisplayedFivePct;
+        public double? DisplayedWeekPct;
 
         public ServiceState(string name, string url, Color accent)
         {
@@ -1949,11 +2011,11 @@ namespace AiUsageWebView2
     {
         public int Width = 760;
         public int Height = 170;
-        public string Language = "ja";
+        public string Language = DefaultLanguage();
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
-        public bool AlwaysOnTop = false;
+        public bool AlwaysOnTop = true;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
         public string LayoutMode = "horizontal";
@@ -1967,6 +2029,13 @@ namespace AiUsageWebView2
         static string SettingsPath
         {
             get { return Path.Combine(Application.StartupPath, "settings.json"); }
+        }
+
+        static string DefaultLanguage()
+        {
+            return string.Equals(System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName, "ja", StringComparison.OrdinalIgnoreCase)
+                ? "ja"
+                : "en";
         }
 
         public static WidgetSettings Load()
