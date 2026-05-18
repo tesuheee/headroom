@@ -2,19 +2,20 @@
 
 # Headroom
 
-A floating Windows desktop widget that shows how much Claude and Codex quota headroom you have left.
+A compact Windows desktop widget that shows how much Claude and Codex quota headroom you have left.
 
 ## Features
 
-- **Side-by-side monitoring** — Claude and Codex, both 5-hour and weekly quotas, in one always-on-top widget
-- **Flexible display** — per-service remaining/used switch, horizontal or vertical layout, reset shown as countdown or clock time
-- **Low-quota and limit warnings** — progress bars turn yellow/red at configurable thresholds, with a clear limit state when quota is exhausted
+- **Side-by-side monitoring** — Claude and Codex, both 5-hour and weekly quotas, in one floating widget
+- **Flexible display** — per-service Remaining / Used switch, wide or tall layout, reset shown as countdown or clock time
+- **Low-quota warnings** — each quota row turns yellow or red at configurable thresholds
+- **Account controls** — log in or log out of Claude / Codex from the embedded browser session
 
 ## Getting Started
 
-1. Download the latest versioned `Headroom-vX.Y.Z.zip` from Releases and unzip anywhere.
+1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
-3. On first launch, click **Login** on each card and sign in to Claude / Codex through the embedded browser. Sessions persist locally; subsequent launches fetch usage automatically.
+3. On first launch, click **Login** on each card and sign in to Claude / Codex through the embedded browser. You can also manage sessions from **Settings → Account**.
 
 > Requires the WebView2 Runtime (preinstalled on Windows 11 and recent Windows 10).
 
@@ -52,14 +53,19 @@ Each quota row is colored independently: normal rows use the service color, warn
 
 ![Side rail controls](docs/06-sidebar-guide.png)
 
-| Control | Action |
-|---------|--------|
+| Side rail control | Action |
+|-------------------|--------|
 | × | Close |
 | Pin | Toggle always on top |
 | R / U | Toggle Rem / Used for visible services |
 | 5h | Toggle 5-hour reset between countdown and clock time |
 | Wk | Toggle weekly reset between countdown and clock time |
 | ⚙ | Open settings |
+
+Per-service buttons:
+
+| Button | Action |
+|--------|--------|
 | ↻ | Refresh one service now |
 | ⚡ | Boost one service — refresh every minute for 30 minutes |
 
@@ -68,6 +74,7 @@ Each quota row is colored independently: normal rows use the service color, warn
 Open with the ⚙ icon on the side rail.
 
 - **General** — language, always on top, enable/disable each service
+- **Account** — login/logout controls for Claude and Codex
 - **Layout** — arrangement, per-service remaining/used, per-quota reset format
 - **Refresh** — normal interval (15 min default), Boost duration / interval (30 min / 1 min default)
 - **Thresholds** — yellow at 50%, red at 30% (configurable)
@@ -83,3 +90,11 @@ The app hosts two hidden WebView2 instances pointed at the Claude and Codex usag
 ```
 
 Windows + .NET Framework 4 required (csc.exe path is hard-coded in `build.ps1`). The WebView2 NuGet package is fetched on first build.
+
+To create a release archive:
+
+```powershell
+.\build.ps1 -Version 1.3.6
+```
+
+The archive is written to `releases/Headroom-vX.Y.Z.zip`.
