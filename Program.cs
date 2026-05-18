@@ -98,7 +98,10 @@ namespace Headroom
                 if (pendingSilentKey.Length > 0)
                 {
                     if (!silentDragging)
-                        BeginInvoke(new Action(async () => await HandleClickAsync(pendingSilentKey)));
+                    {
+                        string capturedKey = pendingSilentKey;
+                        BeginInvoke(new Action(async () => await HandleClickAsync(capturedKey)));
+                    }
                     pendingSilentKey = "";
                     silentDragging = false;
                 }
