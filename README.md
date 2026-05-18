@@ -12,7 +12,7 @@ A floating Windows desktop widget that shows how much Claude and Codex quota hea
 
 ## Getting Started
 
-1. Download the latest `Headroom.zip` from Releases and unzip anywhere.
+1. Download the latest versioned `Headroom-vX.Y.Z.zip` from Releases and unzip anywhere.
 2. Run `Headroom.exe`.
 3. On first launch, click **Login** on each card and sign in to Claude / Codex through the embedded browser. Sessions persist locally; subsequent launches fetch usage automatically.
 

@@ -70,11 +70,12 @@ if (Test-Path $thumbprintFile) {
     }
 }
 
-$ZipName = if ($Version) { "Headroom-v$Version.zip" } else { "Headroom.zip" }
-$ReleaseOut = Join-Path $PSScriptRoot "releases"
-New-Item -ItemType Directory -Force -Path $ReleaseOut | Out-Null
-$ZipPath = Join-Path $ReleaseOut $ZipName
-if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-$PackageFiles = @($Exe, $OutWinForms, $OutCore, $OutLoader)
-Compress-Archive -Path $PackageFiles -DestinationPath $ZipPath
-"Packaged: $ZipPath"
+if ($Version) {
+    $ReleaseOut = Join-Path $PSScriptRoot "releases"
+    New-Item -ItemType Directory -Force -Path $ReleaseOut | Out-Null
+    $ZipPath = Join-Path $ReleaseOut "Headroom-v$Version.zip"
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+    $PackageFiles = @($Exe, $OutWinForms, $OutCore, $OutLoader)
+    Compress-Archive -Path $PackageFiles -DestinationPath $ZipPath
+    "Packaged: $ZipPath"
+}
