@@ -1,3 +1,5 @@
+param([string]$Version = "")
+
 $ErrorActionPreference = "Stop"
 
 $PackageRoot = Join-Path $PSScriptRoot "packages"
@@ -26,7 +28,6 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Copy-Item $WinForms $Out -Force
 Copy-Item $Core $Out -Force
 Copy-Item $Loader $Out -Force
-Copy-Item $Icon $Out -Force
 
 $Exe = Join-Path $Out "AiUsageWebView2.exe"
 $Source = Join-Path $PSScriptRoot "Program.cs"
@@ -46,5 +47,14 @@ $CscArgs = @(
 )
 
 & $Csc @CscArgs
+if ($LASTEXITCODE -ne 0) {
+  throw "C# compile failed with exit code $LASTEXITCODE"
+}
 
 "Built: $Exe"
+
+$ZipName = if ($Version) { "AiUsageWebView2-v$Version.zip" } else { "AiUsageWebView2.zip" }
+$ZipPath = Join-Path $PSScriptRoot $ZipName
+if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+Compress-Archive -Path (Get-ChildItem $Out).FullName -DestinationPath $ZipPath
+"Packaged: $ZipPath"

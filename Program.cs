@@ -69,9 +69,7 @@ namespace AiUsageWebView2
             ShowInTaskbar = true;
             try
             {
-                string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
-                if (File.Exists(icoPath))
-                    Icon = new Icon(icoPath);
+                Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             }
             catch { }
 
@@ -305,13 +303,16 @@ namespace AiUsageWebView2
                 int end = FirstPositive(lines.Count, weeklyStart, designStart);
                 data.FiveHourUsed = FindUsedPercent(lines, sessionStart, end);
                 data.FiveHourReset = FindResetInRange(lines, sessionStart, end);
+                data.FiveHourNotStarted = RangeHasNotStartedText(lines, sessionStart, end);
             }
             if (weeklyStart >= 0)
             {
                 int end = FirstPositive(lines.Count, designStart);
                 data.WeeklyUsed = FindUsedPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
+                data.WeeklyNotStarted = RangeHasNotStartedText(lines, weeklyStart, end);
             }
+            ApplyNotStartedDefaults(data);
             data.HitLimit = DetectLimitHit(text);
             if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
@@ -342,13 +343,16 @@ namespace AiUsageWebView2
                 int end = FirstPositive(lines.Count, weeklyStart, creditStart);
                 data.FiveHourRemaining = FindRemainingPercent(lines, fiveStart, end);
                 data.FiveHourReset = FindResetInRange(lines, fiveStart, end);
+                data.FiveHourNotStarted = RangeHasNotStartedText(lines, fiveStart, end);
             }
             if (weeklyStart >= 0)
             {
                 int end = FirstPositive(lines.Count, creditStart);
                 data.WeeklyRemaining = FindRemainingPercent(lines, weeklyStart, end);
                 data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
+                data.WeeklyNotStarted = RangeHasNotStartedText(lines, weeklyStart, end);
             }
+            ApplyNotStartedDefaults(data);
             data.HitLimit = DetectLimitHit(text);
             if (!data.HasAnyValue()) data.Status = "no_usage_text";
             return data;
@@ -410,6 +414,41 @@ namespace AiUsageWebView2
                 if (Regex.IsMatch(lines[i], "リセット|reset", RegexOptions.IgnoreCase))
                     return lines[i];
             return null;
+        }
+
+        static bool RangeHasNotStartedText(List<string> lines, int start, int end)
+        {
+            for (int i = start; i < Math.Min(end, lines.Count); i++)
+                if (Regex.IsMatch(lines[i], "使い始めたら|使用を開始|開始されます|まだ.*利用|start(?:s|ed)? when|start using|not started", RegexOptions.IgnoreCase))
+                    return true;
+            return false;
+        }
+
+        static void ApplyNotStartedDefaults(UsageData data)
+        {
+            if (data.FiveHourNotStarted || LooksLikeInactiveFiveHourWindow(data))
+            {
+                data.FiveHourNotStarted = true;
+                if (!data.FiveHourUsed.HasValue) data.FiveHourUsed = 0;
+                if (!data.FiveHourRemaining.HasValue || data.FiveHourRemaining.Value < 99) data.FiveHourRemaining = 100;
+                data.FiveHourReset = null;
+            }
+            if (data.WeeklyNotStarted)
+            {
+                if (!data.WeeklyUsed.HasValue) data.WeeklyUsed = 0;
+                if (!data.WeeklyRemaining.HasValue) data.WeeklyRemaining = 100;
+                data.WeeklyReset = null;
+            }
+        }
+
+        static bool LooksLikeInactiveFiveHourWindow(UsageData data)
+        {
+            TimeSpan remaining;
+            if (!TryGetResetRemaining(data.FiveHourReset, out remaining)) return false;
+            if (remaining.TotalHours <= 5.5) return false;
+            if (data.FiveHourRemaining.HasValue && data.FiveHourRemaining.Value >= 99) return true;
+            if (data.FiveHourUsed.HasValue && data.FiveHourUsed.Value <= 1) return true;
+            return false;
         }
 
         void OnMouseDown(object sender, MouseEventArgs e)
@@ -655,8 +694,8 @@ namespace AiUsageWebView2
                 int rowGap = Math.Max(2, Math.Min(10, free / 4));
                 int firstY = contentTop + topPad;
                 int secondY = firstY + rowHeight + rowGap;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, x, firstY, w, accent, label, reset, num, white, muted, dim);
-                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, x, secondY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, accent, label, reset, num, white, muted, dim);
             }
         }
 
@@ -702,12 +741,17 @@ namespace AiUsageWebView2
             }
         }
 
-        static string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain, bool english)
+        string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain, bool english)
         {
             string raw = "";
+            string mode = settings.FiveHourResetMode;
             if (fiveRemain.HasValue && fiveRemain.Value <= 0) raw = data.FiveHourReset;
-            else if (weekRemain.HasValue && weekRemain.Value <= 0) raw = data.WeeklyReset;
-            string text = ResetText(raw, false, english);
+            else if (weekRemain.HasValue && weekRemain.Value <= 0)
+            {
+                raw = data.WeeklyReset;
+                mode = settings.WeeklyResetMode;
+            }
+            string text = ResetText(raw, mode, english);
             return english ? text.Replace("Reset in ", "in ") : text.Replace("リセットまで ", "あと ");
         }
 
@@ -742,7 +786,7 @@ namespace AiUsageWebView2
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, bool showUsed, bool weekly, string resetText, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
+        void DrawRow(Graphics g, string label, int? pct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
@@ -766,7 +810,7 @@ namespace AiUsageWebView2
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, pct, rowColor);
 
-            string reset = ResetText(resetText, weekly, English);
+            string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English);
             if (!string.IsNullOrEmpty(reset))
                 g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
             }
@@ -788,6 +832,11 @@ namespace AiUsageWebView2
             return ResetText(raw, false, false);
         }
 
+        static string ResetText(string raw, string mode, bool english)
+        {
+            return ResetText(raw, string.Equals(mode, "time", StringComparison.OrdinalIgnoreCase), english);
+        }
+
         static string ResetText(string raw, bool preferAbsolute, bool english)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
@@ -798,12 +847,11 @@ namespace AiUsageWebView2
             if (!string.IsNullOrEmpty(relative)) return relative;
 
             DateTime target;
-            if (Regex.IsMatch(cleaned, @"(?:\d{4}/)?\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}") &&
-                TryParseResetTarget(cleaned, out target))
-                return (english ? "Reset " : "リセット ") + FormatDateTime(target);
-
             if (TryParseResetTarget(cleaned, out target))
+            {
+                if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(target, english);
                 return (english ? "Reset in " : "リセットまで ") + FormatDuration(target - DateTime.Now, english);
+            }
 
             if (cleaned.Contains("後にリセット"))
             {
@@ -826,30 +874,62 @@ namespace AiUsageWebView2
             int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
             int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
             var span = new TimeSpan(hours, minutes, 0);
-            if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatDateTime(DateTime.Now.Add(span));
+            if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(DateTime.Now.Add(span), english);
             return (english ? "Reset in " : "リセットまで ") + FormatDuration(span, english);
         }
 
         static bool TryParseResetTarget(string text, out DateTime target)
         {
             target = DateTime.MinValue;
+            var now = DateTime.Now;
             var dateTime = Regex.Match(text, @"(?:(\d{4})/)?(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})");
             if (dateTime.Success)
             {
-                int year = dateTime.Groups[1].Success ? int.Parse(dateTime.Groups[1].Value) : DateTime.Now.Year;
+                int year = dateTime.Groups[1].Success ? int.Parse(dateTime.Groups[1].Value) : now.Year;
                 target = new DateTime(year, int.Parse(dateTime.Groups[2].Value), int.Parse(dateTime.Groups[3].Value), int.Parse(dateTime.Groups[4].Value), int.Parse(dateTime.Groups[5].Value), 0);
+                if (!dateTime.Groups[1].Success && target < now.AddMinutes(-1)) target = target.AddYears(1);
                 return true;
             }
 
-            var time = Regex.Match(text, @"^(\d{1,2}):(\d{2})$");
+            var weekdayTime = Regex.Match(text, @"(\d{1,2}):(\d{2})\s*(?:[（(]\s*([月火水木金土日])(?:曜(?:日)?)?\s*[）)]|([月火水木金土日])曜(?:日)?)");
+            if (weekdayTime.Success)
+            {
+                int hour = int.Parse(weekdayTime.Groups[1].Value);
+                int minute = int.Parse(weekdayTime.Groups[2].Value);
+                string dayText = weekdayTime.Groups[3].Success ? weekdayTime.Groups[3].Value : weekdayTime.Groups[4].Value;
+                DayOfWeek day;
+                if (TryParseJapaneseWeekday(dayText, out day))
+                {
+                    int days = ((int)day - (int)now.DayOfWeek + 7) % 7;
+                    target = now.Date.AddDays(days).AddHours(hour).AddMinutes(minute);
+                    if (target < now.AddMinutes(-1)) target = target.AddDays(7);
+                    return true;
+                }
+            }
+
+            var time = Regex.Match(text, @"(?:^|[^\d])(\d{1,2}):(\d{2})(?:$|[^\d])");
             if (time.Success)
             {
-                var now = DateTime.Now;
                 target = new DateTime(now.Year, now.Month, now.Day, int.Parse(time.Groups[1].Value), int.Parse(time.Groups[2].Value), 0);
                 if (target < now.AddMinutes(-1)) target = target.AddDays(1);
                 return true;
             }
             return false;
+        }
+
+        static bool TryParseJapaneseWeekday(string text, out DayOfWeek day)
+        {
+            switch (text)
+            {
+                case "日": day = DayOfWeek.Sunday; return true;
+                case "月": day = DayOfWeek.Monday; return true;
+                case "火": day = DayOfWeek.Tuesday; return true;
+                case "水": day = DayOfWeek.Wednesday; return true;
+                case "木": day = DayOfWeek.Thursday; return true;
+                case "金": day = DayOfWeek.Friday; return true;
+                case "土": day = DayOfWeek.Saturday; return true;
+                default: day = DayOfWeek.Sunday; return false;
+            }
         }
 
         static string FormatDuration(TimeSpan span)
@@ -877,8 +957,11 @@ namespace AiUsageWebView2
             return text.Replace("時間", "h ").Replace("分", "m").Trim();
         }
 
-        static string FormatDateTime(DateTime value)
+        static string FormatResetTime(DateTime value, bool english)
         {
+            var today = DateTime.Now.Date;
+            if (value.Date == today) return value.ToString("H:mm");
+            if (value.Date == today.AddDays(1)) return (english ? "Tomorrow " : "明日 ") + value.ToString("H:mm");
             return value.ToString("M/d H:mm");
         }
 
@@ -1137,6 +1220,8 @@ namespace AiUsageWebView2
         readonly CheckBox topMost = new CheckBox();
         readonly ComboBox codexMode = new ComboBox();
         readonly ComboBox claudeMode = new ComboBox();
+        readonly ComboBox fiveResetMode = new ComboBox();
+        readonly ComboBox weeklyResetMode = new ComboBox();
         readonly NumericUpDown labelSize = new NumericUpDown();
         readonly NumericUpDown percentSize = new NumericUpDown();
         readonly NumericUpDown resetSize = new NumericUpDown();
@@ -1152,7 +1237,7 @@ namespace AiUsageWebView2
             this.preview = preview;
             Text = T("設定", "Settings");
             Width = 880;
-            Height = 480;
+            Height = 560;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -1192,10 +1277,12 @@ namespace AiUsageWebView2
             AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), colR, startY + 22 + row * 2, 6, 32);
             AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), colR, startY + 22 + row * 3, 8, 42);
             AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), colR, startY + 22 + row * 4, 6, 32);
+            AddResetMode(T("5時間リセット", "5h reset"), fiveResetMode, settings.FiveHourResetMode, colR, startY + 22 + row * 5);
+            AddResetMode(T("週リセット", "Weekly reset"), weeklyResetMode, settings.WeeklyResetMode, colR, startY + 22 + row * 6);
 
-            AddSectionLabel(T("しきい値", "Thresholds"), colR, startY + 22 + row * 5 + 14);
-            AddNumberWithColor(T("黄色（残量%）", "Yellow (left %)"), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, colR, startY + 22 + row * 5 + 38, 1, 99);
-            AddNumberWithColor(T("赤（残量%）", "Red (left %)"), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, colR, startY + 22 + row * 5 + 38 + row, 1, 99);
+            AddSectionLabel(T("しきい値", "Thresholds"), colR, startY + 22 + row * 7 + 14);
+            AddNumberWithColor(T("黄色（残量%）", "Yellow (left %)"), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, colR, startY + 22 + row * 7 + 38, 1, 99);
+            AddNumberWithColor(T("赤（残量%）", "Red (left %)"), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, colR, startY + 22 + row * 7 + 38 + row, 1, 99);
 
             // Bottom buttons
             int btnY = Height - 78;
@@ -1303,6 +1390,20 @@ namespace AiUsageWebView2
             Controls.Add(box);
         }
 
+        void AddResetMode(string text, ComboBox box, string mode, int x, int y)
+        {
+            var label = new Label { Text = text, Location = new Point(x, y + 3), Width = 220, ForeColor = Color.FromArgb(210, 214, 222) };
+            box.DropDownStyle = ComboBoxStyle.DropDownList;
+            box.Items.Add(T("残り時間", "Remaining time"));
+            box.Items.Add(T("リセット時刻", "Reset time"));
+            box.SelectedIndex = string.Equals(mode, "time", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            box.Location = new Point(x + 224, y);
+            box.Width = 120;
+            StyleComboBox(box);
+            Controls.Add(label);
+            Controls.Add(box);
+        }
+
         void AddLanguage(string text, ComboBox box, string value, int x, int y)
         {
             var label = new Label { Text = text, Location = new Point(x, y + 3), Width = 220, ForeColor = Color.FromArgb(210, 214, 222) };
@@ -1332,6 +1433,8 @@ namespace AiUsageWebView2
             finalInterval.ValueChanged += apply;
             codexMode.SelectedIndexChanged += apply;
             claudeMode.SelectedIndexChanged += apply;
+            fiveResetMode.SelectedIndexChanged += apply;
+            weeklyResetMode.SelectedIndexChanged += apply;
             labelSize.ValueChanged += apply;
             percentSize.ValueChanged += apply;
             resetSize.ValueChanged += apply;
@@ -1352,6 +1455,8 @@ namespace AiUsageWebView2
             settings.FinalRefreshIntervalMinutes = (int)finalInterval.Value;
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
+            settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "time" : "relative";
+            settings.WeeklyResetMode = weeklyResetMode.SelectedIndex == 1 ? "time" : "relative";
             settings.LabelFontSize = (float)labelSize.Value;
             settings.PercentFontSize = (float)percentSize.Value;
             settings.ResetFontSize = (float)resetSize.Value;
@@ -1414,6 +1519,8 @@ namespace AiUsageWebView2
         public int? WeeklyRemaining;
         public string FiveHourReset;
         public string WeeklyReset;
+        public bool FiveHourNotStarted;
+        public bool WeeklyNotStarted;
         public bool HitLimit;
 
         public bool HasAnyValue()
@@ -1478,6 +1585,8 @@ namespace AiUsageWebView2
         public bool AlwaysOnTop = true;
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
+        public string FiveHourResetMode = "relative";
+        public string WeeklyResetMode = "relative";
         public float LabelFontSize = 10.8f;
         public float PercentFontSize = 16.5f;
         public float ResetFontSize = 9.9f;
@@ -1513,6 +1622,8 @@ namespace AiUsageWebView2
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
                 s.CodexShowUsed = ReadBool(json, "codexShowUsed", s.CodexShowUsed);
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
+                s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
+                s.WeeklyResetMode = NormalizeResetMode(ReadString(json, "weeklyResetMode", s.WeeklyResetMode));
                 s.LabelFontSize = ReadFloat(json, "labelFontSize", s.LabelFontSize);
                 s.PercentFontSize = ReadFloat(json, "percentFontSize", s.PercentFontSize);
                 s.ResetFontSize = ReadFloat(json, "resetFontSize", s.ResetFontSize);
@@ -1545,6 +1656,8 @@ namespace AiUsageWebView2
             AlwaysOnTop = other.AlwaysOnTop;
             CodexShowUsed = other.CodexShowUsed;
             ClaudeShowUsed = other.ClaudeShowUsed;
+            FiveHourResetMode = other.FiveHourResetMode;
+            WeeklyResetMode = other.WeeklyResetMode;
             LabelFontSize = other.LabelFontSize;
             PercentFontSize = other.PercentFontSize;
             ResetFontSize = other.ResetFontSize;
@@ -1572,6 +1685,8 @@ namespace AiUsageWebView2
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
                     "  \"codexShowUsed\": " + (CodexShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
+                    "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
+                    "  \"weeklyResetMode\": \"" + Escape(WeeklyResetMode) + "\",\r\n" +
                     "  \"labelFontSize\": " + FormatFloat(LabelFontSize) + ",\r\n" +
                     "  \"percentFontSize\": " + FormatFloat(PercentFontSize) + ",\r\n" +
                     "  \"resetFontSize\": " + FormatFloat(ResetFontSize) + ",\r\n" +
@@ -1628,6 +1743,11 @@ namespace AiUsageWebView2
             var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
             if (!m.Success) return fallback;
             return m.Groups[1].Value;
+        }
+
+        static string NormalizeResetMode(string value)
+        {
+            return string.Equals(value, "time", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
         }
 
         static string FormatFloat(float value)
