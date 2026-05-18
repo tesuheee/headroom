@@ -149,7 +149,7 @@ namespace AiUsageWebView2
         {
             if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
             TimeSpan untilReset;
-            if (TryGetResetRemaining(service.Data.FiveHourReset, out untilReset) &&
+            if (TryGetResetRemaining(service.Data.FiveHourReset, false, out untilReset) &&
                 untilReset.TotalMinutes > 0 &&
                 untilReset.TotalMinutes <= settings.FinalRefreshWindowMinutes)
                 return settings.FinalRefreshIntervalMinutes;
@@ -427,9 +427,8 @@ namespace AiUsageWebView2
 
         static void ApplyNotStartedDefaults(UsageData data)
         {
-            if (data.FiveHourNotStarted || LooksLikeInactiveFiveHourWindow(data))
+            if (data.FiveHourNotStarted)
             {
-                data.FiveHourNotStarted = true;
                 if (!data.FiveHourUsed.HasValue) data.FiveHourUsed = 0;
                 if (!data.FiveHourRemaining.HasValue || data.FiveHourRemaining.Value < 99) data.FiveHourRemaining = 100;
                 data.FiveHourReset = null;
@@ -440,16 +439,6 @@ namespace AiUsageWebView2
                 if (!data.WeeklyRemaining.HasValue) data.WeeklyRemaining = 100;
                 data.WeeklyReset = null;
             }
-        }
-
-        static bool LooksLikeInactiveFiveHourWindow(UsageData data)
-        {
-            TimeSpan remaining;
-            if (!TryGetResetRemaining(data.FiveHourReset, out remaining)) return false;
-            if (remaining.TotalHours <= 5.5) return false;
-            if (data.FiveHourRemaining.HasValue && data.FiveHourRemaining.Value >= 99) return true;
-            if (data.FiveHourUsed.HasValue && data.FiveHourUsed.Value <= 1) return true;
-            return false;
         }
 
         void OnMouseDown(object sender, MouseEventArgs e)
@@ -793,6 +782,11 @@ namespace AiUsageWebView2
 
         static bool TryGetResetRemaining(string raw, out TimeSpan remaining)
         {
+            return TryGetResetRemaining(raw, true, out remaining);
+        }
+
+        static bool TryGetResetRemaining(string raw, bool rollTimeOnlyToTomorrow, out TimeSpan remaining)
+        {
             remaining = TimeSpan.Zero;
             if (string.IsNullOrWhiteSpace(raw)) return false;
             string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
@@ -807,7 +801,7 @@ namespace AiUsageWebView2
             }
 
             DateTime target;
-            if (TryParseResetTarget(cleaned, out target))
+            if (TryParseResetTarget(cleaned, rollTimeOnlyToTomorrow, out target))
             {
                 remaining = target - DateTime.Now;
                 return true;
@@ -893,12 +887,12 @@ namespace AiUsageWebView2
             if (!string.IsNullOrEmpty(relative)) return relative;
 
             DateTime target;
-            if (TryParseResetTarget(cleaned, out target))
+            if (TryParseResetTarget(cleaned, weekly, out target))
             {
-                if (!weekly && !IsPlausibleFiveHourReset(target)) return "";
                 if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(target, english);
                 return (english ? "Reset in " : "リセットまで ") + FormatDuration(target - DateTime.Now, english);
             }
+            if (!weekly && IsTimeOnly(cleaned)) return "";
 
             if (cleaned.Contains("後にリセット"))
             {
@@ -926,18 +920,21 @@ namespace AiUsageWebView2
             int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
             int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
             var span = new TimeSpan(hours, minutes, 0);
-            if (!weekly && span.TotalHours > 5.5) return "";
             if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(DateTime.Now.Add(span), english);
             return (english ? "Reset in " : "リセットまで ") + FormatDuration(span, english);
         }
 
-        static bool IsPlausibleFiveHourReset(DateTime target)
+        static bool IsTimeOnly(string text)
         {
-            var remaining = target - DateTime.Now;
-            return remaining.TotalMinutes >= -1 && remaining.TotalHours <= 5.5;
+            return Regex.IsMatch(text.Trim(), @"^\d{1,2}:\d{2}$");
         }
 
         static bool TryParseResetTarget(string text, out DateTime target)
+        {
+            return TryParseResetTarget(text, true, out target);
+        }
+
+        static bool TryParseResetTarget(string text, bool rollTimeOnlyToTomorrow, out DateTime target)
         {
             target = DateTime.MinValue;
             var now = DateTime.Now;
@@ -970,7 +967,11 @@ namespace AiUsageWebView2
             if (time.Success)
             {
                 target = new DateTime(now.Year, now.Month, now.Day, int.Parse(time.Groups[1].Value), int.Parse(time.Groups[2].Value), 0);
-                if (target < now.AddMinutes(-1)) target = target.AddDays(1);
+                if (target < now.AddMinutes(-1))
+                {
+                    if (!rollTimeOnlyToTomorrow) return false;
+                    target = target.AddDays(1);
+                }
                 return true;
             }
             return false;
