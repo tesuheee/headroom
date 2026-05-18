@@ -88,6 +88,7 @@ namespace Headroom
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
             MouseUp += (s, e) => resizing = false;
+            MouseLeave += (s, e) => { hoverKey = ""; Invalidate(); };
             Resize += (s, e) =>
             {
                 settings.Width = Width;
@@ -763,7 +764,7 @@ namespace Headroom
             int tokenY    = 56;
             int fiveY     = ClientSize.Height - 72;
             int weekY     = ClientSize.Height - 46;
-            int settingsY = ClientSize.Height - 20;
+            int settingsY = ClientSize.Height - 22;
 
             hits["close"]     = new Rectangle(x - 6, closeY    - 6, 28, 28);
             hits["pin"]       = new Rectangle(x - 6, pinY      - 6, 28, 28);
@@ -975,10 +976,10 @@ namespace Headroom
             int curLabelW = (int)Math.Ceiling(g.MeasureString(label, labelFont).Width);
             int modeX = labelX + labelColW + 4;
             string modeText = showUsed ? T("使用", "Used") : T("残り", "Left");
-            int modeColW = Math.Max(28, Math.Max(
+            int modeColW = Math.Max(
                 (int)Math.Ceiling(g.MeasureString(T("使用", "Used"), labelFont).Width),
-                (int)Math.Ceiling(g.MeasureString(T("残り", "Left"), labelFont).Width)));
-            int percentX = modeX + modeColW + 4;
+                (int)Math.Ceiling(g.MeasureString(T("残り", "Left"), labelFont).Width));
+            int percentX = modeX + modeColW + 2;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX + labelColW - curLabelW, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
@@ -1513,9 +1514,10 @@ namespace Headroom
                     if (layoutChanged) ApplyIdealSize();
                     TopMost = settings.AlwaysOnTop;
                     settings.Save();
-                    Invalidate();
                 }
             }
+            hoverKey = "";
+            Invalidate();
         }
 
         static System.Drawing.Drawing2D.GraphicsPath RoundRect(int x, int y, int w, int h, int r)
@@ -1616,7 +1618,7 @@ namespace Headroom
                 Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel",
                 DialogResult = DialogResult.Cancel,
                 Location = new Point(Width - 218, 12), Width = 96, Height = 34,
-                BackColor = Color.FromArgb(32, 32, 38),
+                FillColor = Color.FromArgb(32, 32, 38),
                 ForeColor = Color.FromArgb(200, 206, 218),
                 Font = new Font("Yu Gothic UI", 10.5f),
                 CornerRadius = 14,
@@ -1628,7 +1630,7 @@ namespace Headroom
                 Text = T("保存", "Save"), Tag = "保存|Save",
                 DialogResult = DialogResult.OK,
                 Location = new Point(Width - 114, 12), Width = 90, Height = 34,
-                BackColor = Color.FromArgb(45, 132, 235),
+                FillColor = Color.FromArgb(45, 132, 235),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold),
                 CornerRadius = 14,
@@ -1810,7 +1812,7 @@ namespace Headroom
 
         void AddSection(Panel parent, string ja, string en, ref int y)
         {
-            y += 10;
+            y += 22;
             var bar = new Panel { Location = new Point(24, y + 2), Width = 3, Height = 14, BackColor = Color.FromArgb(45, 132, 235) };
             parent.Controls.Add(bar);
             var label = new Label
@@ -2416,6 +2418,7 @@ namespace Headroom
     sealed class RoundButton : Button
     {
         public int CornerRadius = 8;
+        public Color FillColor = Color.Empty;
         public Color HoverBackColor = Color.Empty;
         public Color PressedBackColor = Color.Empty;
         public Color BorderColorNormal = Color.Empty;
@@ -2429,6 +2432,7 @@ namespace Headroom
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
                    | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw
                    | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
         }
 
         protected override void OnMouseEnter(EventArgs e) { _hover = true; base.OnMouseEnter(e); Invalidate(); }
@@ -2441,7 +2445,6 @@ namespace Headroom
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-            g.Clear(Parent != null ? Parent.BackColor : Color.FromArgb(14, 14, 18));
 
             int d = Math.Max(1, CornerRadius * 2);
             int w = Width - 1, h = Height - 1;
@@ -2453,7 +2456,7 @@ namespace Headroom
                 path.AddArc(0, h - d, d, d, 90, 90);
                 path.CloseFigure();
 
-                Color fill = BackColor;
+                Color fill = FillColor != Color.Empty ? FillColor : Color.FromArgb(32, 32, 38);
                 if (_pressed && PressedBackColor != Color.Empty) fill = PressedBackColor;
                 else if (_hover && HoverBackColor != Color.Empty) fill = HoverBackColor;
 
