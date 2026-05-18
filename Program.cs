@@ -1430,12 +1430,30 @@ namespace AiUsageWebView2
             };
             Controls.Add(title);
 
-            var cancel = new Button { Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel", DialogResult = DialogResult.Cancel, Location = new Point(Width - 218, 13), Width = 96, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(32, 32, 38), ForeColor = Color.FromArgb(180, 186, 200), Font = new Font("Yu Gothic UI", 10.5f) };
-            cancel.FlatAppearance.BorderColor = Color.FromArgb(52, 52, 58);
-            cancel.FlatAppearance.MouseOverBackColor = Color.FromArgb(44, 44, 50);
-            var ok = new Button { Text = T("保存", "Save"), Tag = "保存|Save", DialogResult = DialogResult.OK, Location = new Point(Width - 114, 13), Width = 90, Height = 32, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 132, 235), ForeColor = Color.White, Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold) };
-            ok.FlatAppearance.BorderColor = Color.FromArgb(45, 132, 235);
-            ok.FlatAppearance.MouseOverBackColor = Color.FromArgb(68, 152, 250);
+            var cancel = new RoundButton {
+                Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel",
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(Width - 218, 12), Width = 96, Height = 34,
+                BackColor = Color.FromArgb(32, 32, 38),
+                ForeColor = Color.FromArgb(200, 206, 218),
+                Font = new Font("Yu Gothic UI", 10.5f),
+                CornerRadius = 8,
+                HoverBackColor   = Color.FromArgb(48, 48, 56),
+                PressedBackColor = Color.FromArgb(28, 28, 34),
+                BorderColorNormal = Color.FromArgb(60, 60, 68)
+            };
+            var ok = new RoundButton {
+                Text = T("保存", "Save"), Tag = "保存|Save",
+                DialogResult = DialogResult.OK,
+                Location = new Point(Width - 114, 12), Width = 90, Height = 34,
+                BackColor = Color.FromArgb(45, 132, 235),
+                ForeColor = Color.White,
+                Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold),
+                CornerRadius = 8,
+                HoverBackColor   = Color.FromArgb(72, 152, 250),
+                PressedBackColor = Color.FromArgb(35, 112, 210),
+                BorderColorNormal = Color.FromArgb(45, 132, 235)
+            };
             ok.Click += (s, e) => ApplyToSettings();
             Controls.Add(cancel);
             Controls.Add(ok);
@@ -2201,6 +2219,62 @@ namespace AiUsageWebView2
                     g.DrawRectangle(p, 0, 0, r.Right - r.Left - 1, r.Bottom - r.Top - 1);
             }
             finally { ReleaseDC(Handle, dc); }
+        }
+    }
+
+    sealed class RoundButton : Button
+    {
+        public int CornerRadius = 8;
+        public Color HoverBackColor = Color.Empty;
+        public Color PressedBackColor = Color.Empty;
+        public Color BorderColorNormal = Color.Empty;
+        bool _hover;
+        bool _pressed;
+
+        public RoundButton()
+        {
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 0;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw
+                   | ControlStyles.SupportsTransparentBackColor, true);
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; base.OnMouseEnter(e); Invalidate(); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; base.OnMouseLeave(e); Invalidate(); }
+        protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; base.OnMouseDown(e); Invalidate(); }
+        protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; base.OnMouseUp(e); Invalidate(); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            int d = Math.Max(1, CornerRadius * 2);
+            int w = Width - 1, h = Height - 1;
+            using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                path.AddArc(0, 0, d, d, 180, 90);
+                path.AddArc(w - d, 0, d, d, 270, 90);
+                path.AddArc(w - d, h - d, d, d, 0, 90);
+                path.AddArc(0, h - d, d, d, 90, 90);
+                path.CloseFigure();
+
+                Color fill = BackColor;
+                if (_pressed && PressedBackColor != Color.Empty) fill = PressedBackColor;
+                else if (_hover && HoverBackColor != Color.Empty) fill = HoverBackColor;
+
+                using (var b = new SolidBrush(fill))
+                    g.FillPath(b, path);
+                if (BorderColorNormal != Color.Empty)
+                    using (var pen = new Pen(BorderColorNormal, 1f))
+                        g.DrawPath(pen, path);
+            }
+
+            var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+                      | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+            TextRenderer.DrawText(g, Text, Font, ClientRectangle, ForeColor, flags);
         }
     }
 
