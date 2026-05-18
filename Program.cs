@@ -969,7 +969,10 @@ namespace Headroom
             int curLabelW = (int)Math.Ceiling(g.MeasureString(label, labelFont).Width);
             int modeX = labelX + labelColW + 4;
             string modeText = showUsed ? T("使用", "Used") : T("残り", "Left");
-            int percentX = modeX + Math.Max(28, (int)Math.Ceiling(g.MeasureString(modeText, labelFont).Width)) + 4;
+            int modeColW = Math.Max(28, Math.Max(
+                (int)Math.Ceiling(g.MeasureString(T("使用", "Used"), labelFont).Width),
+                (int)Math.Ceiling(g.MeasureString(T("残り", "Left"), labelFont).Width)));
+            int percentX = modeX + modeColW + 4;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX + labelColW - curLabelW, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
