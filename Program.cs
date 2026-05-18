@@ -40,6 +40,11 @@ namespace Headroom
         readonly WebView2 claudeView = new WebView2();
         readonly WebView2 codexView = new WebView2();
         readonly Dictionary<string, Rectangle> hits = new Dictionary<string, Rectangle>();
+        readonly Dictionary<string, Rectangle> silentHits = new Dictionary<string, Rectangle>();
+        string pendingSilentKey = "";
+        Point pendingSilentScreenStart;
+        Point pendingSilentWindowStart;
+        bool silentDragging;
         readonly WidgetSettings settings = WidgetSettings.Load();
         readonly ToolTip toolTip = new ToolTip { InitialDelay = 2000, ReshowDelay = 100, ShowAlways = true };
         readonly Timer tooltipTimer = new Timer();
@@ -87,7 +92,17 @@ namespace Headroom
 
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
-            MouseUp += (s, e) => resizing = false;
+            MouseUp += (s, e) =>
+            {
+                resizing = false;
+                if (pendingSilentKey.Length > 0)
+                {
+                    if (!silentDragging)
+                        BeginInvoke(new Action(async () => await HandleClickAsync(pendingSilentKey)));
+                    pendingSilentKey = "";
+                    silentDragging = false;
+                }
+            };
             MouseLeave += (s, e) => { hoverKey = ""; Invalidate(); };
             Resize += (s, e) =>
             {
@@ -560,6 +575,16 @@ namespace Headroom
                 return;
             }
 
+            string sk = SilentHitKey(e.Location);
+            if (sk.Length > 0)
+            {
+                pendingSilentKey = sk;
+                pendingSilentScreenStart = PointToScreen(e.Location);
+                pendingSilentWindowStart = Location;
+                silentDragging = false;
+                return;
+            }
+
             if (IsResizeGrip(e.Location))
             {
                 resizing = true;
@@ -676,6 +701,13 @@ namespace Headroom
             Invalidate();
         }
 
+        string SilentHitKey(Point p)
+        {
+            foreach (var kv in silentHits)
+                if (kv.Value.Contains(p)) return kv.Key;
+            return "";
+        }
+
         void OnMouseMove(object sender, MouseEventArgs e)
         {
             if (resizing)
@@ -683,6 +715,18 @@ namespace Headroom
                 Width = Math.Max(MinimumSize.Width, resizeStartSize.Width + e.X - resizeStartPoint.X);
                 Height = Math.Max(MinimumSize.Height, resizeStartSize.Height + e.Y - resizeStartPoint.Y);
                 Invalidate();
+                return;
+            }
+
+            if (pendingSilentKey.Length > 0)
+            {
+                Point screenNow = PointToScreen(e.Location);
+                int dx = screenNow.X - pendingSilentScreenStart.X;
+                int dy = screenNow.Y - pendingSilentScreenStart.Y;
+                if (!silentDragging && Math.Abs(dx) + Math.Abs(dy) > 4)
+                    silentDragging = true;
+                if (silentDragging)
+                    Location = new Point(pendingSilentWindowStart.X + dx, pendingSilentWindowStart.Y + dy);
                 return;
             }
 
@@ -1020,7 +1064,7 @@ namespace Headroom
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
             if (hitMode != null)
-                hits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
+                silentHits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
             string pctStr = empty ? "--" : pct.Value + "%";
             int pctColW = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
@@ -1043,7 +1087,7 @@ namespace Headroom
                 if (hitReset != null)
                 {
                     SizeF resetSz = g.MeasureString(reset, resetFont);
-                    hits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
+                    silentHits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
                 }
                 if (atLimit)
                     using (var boldReset = new Font(resetFont, FontStyle.Bold))
