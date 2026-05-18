@@ -41,7 +41,10 @@ namespace AiUsageWebView2
         readonly WebView2 codexView = new WebView2();
         readonly Dictionary<string, Rectangle> hits = new Dictionary<string, Rectangle>();
         readonly WidgetSettings settings = WidgetSettings.Load();
-        readonly ToolTip toolTip = new ToolTip { InitialDelay = 300, ReshowDelay = 100, ShowAlways = true };
+        readonly ToolTip toolTip = new ToolTip { InitialDelay = 2000, ReshowDelay = 100, ShowAlways = true };
+        readonly Timer tooltipTimer = new Timer();
+        string pendingTooltipText = "";
+        Point pendingTooltipLocation;
 
         CoreWebView2Environment webEnv;
         ServiceState claude = new ServiceState("Claude", ClaudeUrl, Color.FromArgb(45, 132, 235));
@@ -104,6 +107,14 @@ namespace AiUsageWebView2
                 Invalidate();
             };
             paintTimer.Start();
+
+            tooltipTimer.Interval = 2000;
+            tooltipTimer.Tick += (s, e) =>
+            {
+                tooltipTimer.Stop();
+                if (!string.IsNullOrEmpty(pendingTooltipText))
+                    toolTip.Show(pendingTooltipText, this, pendingTooltipLocation.X, pendingTooltipLocation.Y, 3000);
+            };
 
             schedulerTimer.Interval = 10000;
             schedulerTimer.Tick += async (s, e) => await RunScheduledRefreshAsync();
@@ -543,14 +554,18 @@ namespace AiUsageWebView2
             {
                 hoverKey = key;
                 toolTip.Hide(this);
+                tooltipTimer.Stop();
+                pendingTooltipText = "";
                 string tip = TooltipText(key);
                 if (tip.Length > 0)
                 {
                     Rectangle hr;
                     if (hits.TryGetValue(key, out hr))
-                        toolTip.Show(tip, this, hr.X + hr.Width / 2, hr.Y + hr.Height + 4, 3000);
+                        pendingTooltipLocation = new Point(hr.X + hr.Width / 2, hr.Y + hr.Height + 4);
                     else
-                        toolTip.Show(tip, this, e.X + 12, e.Y + 18, 3000);
+                        pendingTooltipLocation = new Point(e.X + 12, e.Y + 18);
+                    pendingTooltipText = tip;
+                    tooltipTimer.Start();
                 }
                 Invalidate();
             }
