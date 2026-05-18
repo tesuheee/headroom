@@ -616,6 +616,29 @@ namespace Headroom
                 return;
             }
 
+            if (key.EndsWith("-fiveMode") || key.EndsWith("-weekMode"))
+            {
+                if (key.StartsWith("codex")) settings.CodexShowUsed = !settings.CodexShowUsed;
+                else settings.ClaudeShowUsed = !settings.ClaudeShowUsed;
+                settings.Save();
+                Invalidate();
+                return;
+            }
+            if (key.EndsWith("-fiveResetLabel"))
+            {
+                settings.FiveHourResetMode = string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
+                settings.Save();
+                Invalidate();
+                return;
+            }
+            if (key.EndsWith("-weekResetLabel"))
+            {
+                settings.WeeklyResetMode = string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
+                settings.Save();
+                Invalidate();
+                return;
+            }
+
             ServiceState service = key.StartsWith("codex") ? codex : claude;
             WebView2 view = service == codex ? codexView : claudeView;
             if (key.EndsWith("refresh"))
@@ -877,8 +900,8 @@ namespace Headroom
                 int rowGap = Math.Max(2, Math.Min(10, free / 4));
                 int firstY = contentTop + topPad;
                 int secondY = firstY + rowHeight + rowGap;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, state.Accent, label, reset, num, white, muted, dim);
-                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim);
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel");
+                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
             }
         }
 
@@ -974,7 +997,7 @@ namespace Headroom
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
@@ -996,6 +1019,8 @@ namespace Headroom
             int percentX = modeX + modeColW + 2;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
             g.DrawString(label, labelFont, muted, labelX, labelY);
+            if (hitMode != null)
+                hits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
             string pctStr = empty ? "--" : pct.Value + "%";
             int pctColW = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
@@ -1014,11 +1039,17 @@ namespace Headroom
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
             {
+                int resetY = y + Math.Max(18, (int)Math.Round(PercentFontSize * 1.0));
+                if (hitReset != null)
+                {
+                    SizeF resetSz = g.MeasureString(reset, resetFont);
+                    hits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
+                }
                 if (atLimit)
                     using (var boldReset = new Font(resetFont, FontStyle.Bold))
-                        g.DrawString(reset, boldReset, white, barX, y + Math.Max(18, (int)Math.Round(PercentFontSize * 1.0)));
+                        g.DrawString(reset, boldReset, white, barX, resetY);
                 else
-                    g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(PercentFontSize * 1.0)));
+                    g.DrawString(reset, resetFont, dim, barX, resetY);
             }
             }
         }
