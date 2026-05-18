@@ -1309,21 +1309,21 @@ namespace AiUsageWebView2
         readonly DarkComboBox claudeMode = new DarkComboBox();
         readonly DarkComboBox fiveResetMode = new DarkComboBox();
         readonly DarkComboBox weeklyResetMode = new DarkComboBox();
-        readonly TextBox normal = new TextBox();
-        readonly TextBox boostDuration = new TextBox();
-        readonly TextBox boostInterval = new TextBox();
-        readonly TextBox finalWindow = new TextBox();
-        readonly TextBox finalInterval = new TextBox();
+        readonly DarkTextBox normal = new DarkTextBox();
+        readonly DarkTextBox boostDuration = new DarkTextBox();
+        readonly DarkTextBox boostInterval = new DarkTextBox();
+        readonly DarkTextBox finalWindow = new DarkTextBox();
+        readonly DarkTextBox finalInterval = new DarkTextBox();
         readonly CheckBox topMost = new CheckBox();
         readonly CheckBox showCodex = new CheckBox();
         readonly CheckBox showClaude = new CheckBox();
-        readonly TextBox labelSize = new TextBox();
-        readonly TextBox percentSize = new TextBox();
-        readonly TextBox resetSize = new TextBox();
-        readonly TextBox warningPercent = new TextBox();
-        readonly TextBox criticalPercent = new TextBox();
-        readonly TextBox warningColor = new TextBox();
-        readonly TextBox criticalColor = new TextBox();
+        readonly DarkTextBox labelSize = new DarkTextBox();
+        readonly DarkTextBox percentSize = new DarkTextBox();
+        readonly DarkTextBox resetSize = new DarkTextBox();
+        readonly DarkTextBox warningPercent = new DarkTextBox();
+        readonly DarkTextBox criticalPercent = new DarkTextBox();
+        readonly DarkTextBox warningColor = new DarkTextBox();
+        readonly DarkTextBox criticalColor = new DarkTextBox();
 
         public SettingsForm(WidgetSettings settings, Action preview)
         {
@@ -1349,7 +1349,8 @@ namespace AiUsageWebView2
                 Width = 300,
                 Height = 26,
                 Font = new Font("Yu Gothic UI", 13f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(235, 238, 244)
+                ForeColor = Color.FromArgb(235, 238, 244),
+                BackColor = Color.Transparent
             };
             Controls.Add(title);
 
@@ -1598,9 +1599,9 @@ namespace AiUsageWebView2
             box.Width = 175;
             box.Height = 28;
             box.TextAlign = HorizontalAlignment.Right;
-            box.BackColor = Color.FromArgb(47, 47, 50);
-            box.ForeColor = Color.FromArgb(235, 238, 244);
-            box.Font = new Font("Yu Gothic UI", 9f);
+            box.BackColor = Color.FromArgb(26, 28, 38);
+            box.ForeColor = Color.FromArgb(210, 214, 226);
+            box.Font = new Font("Yu Gothic UI", 9.5f);
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
@@ -1613,9 +1614,9 @@ namespace AiUsageWebView2
 
         void StyleTextBox(TextBox box)
         {
-            box.BackColor = Color.FromArgb(47, 47, 50);
-            box.ForeColor = Color.FromArgb(235, 238, 244);
-            box.Font = new Font("Yu Gothic UI", 9f);
+            box.BackColor = Color.FromArgb(26, 28, 38);
+            box.ForeColor = Color.FromArgb(210, 214, 226);
+            box.Font = new Font("Yu Gothic UI", 9.5f);
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
@@ -2070,8 +2071,9 @@ namespace AiUsageWebView2
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x14) { m.Result = (IntPtr)1; return; } // WM_ERASEBKGND: suppress
             base.WndProc(ref m);
-            if (m.Msg == 0xF) // WM_PAINT
+            if (m.Msg == 0x07 || m.Msg == 0x08 || m.Msg == 0x0F || m.Msg == 0x200 || m.Msg == 0x2A3)
                 using (var g = Graphics.FromHwnd(Handle))
                     PaintFace(g);
         }
@@ -2114,8 +2116,44 @@ namespace AiUsageWebView2
             using (var bg = new SolidBrush(sel ? SelColor : Color.FromArgb(22, 24, 34)))
                 e.Graphics.FillRectangle(bg, e.Bounds);
             using (var tb = new SolidBrush(TextColor))
-                e.Graphics.DrawString(box.Items[e.Index].ToString(), e.Font, tb,
-                    e.Bounds.X + 10, e.Bounds.Y + (e.Bounds.Height - e.Font.Height) / 2);
+                e.Graphics.DrawString(box.Items[e.Index].ToString(), box.Font, tb,
+                    e.Bounds.X + 10, e.Bounds.Y + (e.Bounds.Height - box.Font.Height) / 2);
+        }
+    }
+
+    sealed class DarkTextBox : TextBox
+    {
+        static readonly Color BorderColor = Color.FromArgb(48, 58, 80);
+
+        [DllImport("user32.dll")] static extern IntPtr GetWindowDC(IntPtr h);
+        [DllImport("user32.dll")] static extern int    ReleaseDC(IntPtr h, IntPtr dc);
+        [DllImport("user32.dll")] static extern bool   GetWindowRect(IntPtr h, out RECT r);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left, Top, Right, Bottom; }
+
+        public DarkTextBox() { AutoSize = false; }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0x85 || m.Msg == 0x86) // WM_NCPAINT, WM_NCACTIVATE
+                DrawBorder();
+        }
+
+        void DrawBorder()
+        {
+            RECT r;
+            GetWindowRect(Handle, out r);
+            IntPtr dc = GetWindowDC(Handle);
+            if (dc == IntPtr.Zero) return;
+            try
+            {
+                using (var g = Graphics.FromHdc(dc))
+                using (var p = new Pen(BorderColor))
+                    g.DrawRectangle(p, 0, 0, r.Right - r.Left - 1, r.Bottom - r.Top - 1);
+            }
+            finally { ReleaseDC(Handle, dc); }
         }
     }
 }
