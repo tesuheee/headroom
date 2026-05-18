@@ -66,7 +66,7 @@ if (Test-Path $thumbprintFile) {
             -TimestampServer "http://timestamp.digicert.com" | Out-Null
         "Signed: $Exe"
     } else {
-        Write-Warning "Cert not found in store. Run setup-cert.ps1 first."
+        Write-Warning "Cert not found in store. Remove .cert-thumbprint or create/import a code-signing certificate with that thumbprint."
     }
 }
 
