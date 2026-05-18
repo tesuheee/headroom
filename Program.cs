@@ -762,9 +762,9 @@ namespace Headroom
             int closeY    = 4;
             int pinY      = 30;
             int tokenY    = 56;
-            int fiveY     = ClientSize.Height - 72;
-            int weekY     = ClientSize.Height - 46;
-            int settingsY = ClientSize.Height - 22;
+            int fiveY     = 82;
+            int weekY     = 108;
+            int settingsY = 134;
 
             hits["close"]     = new Rectangle(x - 6, closeY    - 6, 28, 28);
             hits["pin"]       = new Rectangle(x - 6, pinY      - 6, 28, 28);
@@ -969,30 +969,29 @@ namespace Headroom
             Color numColor = Color.FromArgb(240, 242, 248);
             using (var pctBrush = new SolidBrush(numColor))
             {
-            int labelX = x + 10;
+            int labelX = x + 6;
             int label5hW = (int)Math.Ceiling(g.MeasureString(T("5時間", "5h"), labelFont).Width);
             int labelWkW = (int)Math.Ceiling(g.MeasureString(T("週", "Week"), labelFont).Width);
-            int labelColW = Math.Max(32, Math.Max(label5hW, labelWkW));
-            int curLabelW = (int)Math.Ceiling(g.MeasureString(label, labelFont).Width);
-            int modeX = labelX + labelColW + 4;
-            string modeText = showUsed ? T("使用", "Used") : T("残り", "Remaining");
+            int maxLabelW = Math.Max(label5hW, labelWkW);
+            string modeText = showUsed ? T("使用", "Used") : T("残り", "Rem");
             int modeColW = Math.Max(
                 (int)Math.Ceiling(g.MeasureString(T("使用", "Used"), labelFont).Width),
-                (int)Math.Ceiling(g.MeasureString(T("残り", "Remaining"), labelFont).Width));
+                (int)Math.Ceiling(g.MeasureString(T("残り", "Rem"), labelFont).Width));
+            int modeX = labelX + maxLabelW + 2;
             int percentX = modeX + modeColW + 2;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
-            g.DrawString(label, labelFont, muted, labelX + labelColW - curLabelW, labelY);
+            g.DrawString(label, labelFont, muted, labelX, labelY);
             g.DrawString(modeText, labelFont, dim, modeX, labelY);
             string pctStr = empty ? "--" : pct.Value + "%";
-            int pctColW = Math.Max(48, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
+            int pctColW = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
             using (var pctFormat = new StringFormat())
             {
-                pctFormat.Alignment = StringAlignment.Far;
+                pctFormat.Alignment = StringAlignment.Near;
                 pctFormat.LineAlignment = StringAlignment.Near;
                 pctFormat.FormatFlags = StringFormatFlags.NoWrap;
-                g.DrawString(pctStr, numFont, pctBrush, new RectangleF(percentX, y - 4, pctColW, numFont.Height + 4), pctFormat);
+                g.DrawString(pctStr, numFont, pctBrush, new RectangleF(percentX, y - 4, pctColW + 4, numFont.Height + 4), pctFormat);
             }
-            int barX = percentX + pctColW + 12;
+            int barX = percentX + pctColW + 8;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
@@ -1621,7 +1620,7 @@ namespace Headroom
                 FillColor = Color.FromArgb(32, 32, 38),
                 ForeColor = Color.FromArgb(200, 206, 218),
                 Font = new Font("Yu Gothic UI", 10.5f),
-                CornerRadius = 14,
+                CornerRadius = 0,
                 HoverBackColor   = Color.FromArgb(48, 48, 56),
                 PressedBackColor = Color.FromArgb(28, 28, 34),
                 BorderColorNormal = Color.FromArgb(60, 60, 68)
@@ -1633,7 +1632,7 @@ namespace Headroom
                 FillColor = Color.FromArgb(45, 132, 235),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold),
-                CornerRadius = 14,
+                CornerRadius = 0,
                 HoverBackColor   = Color.FromArgb(72, 152, 250),
                 PressedBackColor = Color.FromArgb(35, 112, 210),
                 BorderColorNormal = Color.FromArgb(45, 132, 235)
@@ -1812,21 +1811,21 @@ namespace Headroom
 
         void AddSection(Panel parent, string ja, string en, ref int y)
         {
-            y += 22;
-            var bar = new Panel { Location = new Point(24, y + 2), Width = 3, Height = 14, BackColor = Color.FromArgb(45, 132, 235) };
+            y += 24;
+            var bar = new Panel { Location = new Point(20, y + 3), Width = 3, Height = 16, BackColor = Color.FromArgb(45, 132, 235) };
             parent.Controls.Add(bar);
             var label = new Label
             {
                 Text = T(ja, en),
                 Tag = ja + "|" + en,
-                Location = new Point(34, y),
-                Width = 240,
-                Height = 20,
-                Font = new Font("Yu Gothic UI", 9.5f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(168, 174, 200)
+                Location = new Point(30, y),
+                Width = 260,
+                Height = 22,
+                Font = new Font("Yu Gothic UI", 11f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(185, 190, 212)
             };
             parent.Controls.Add(label);
-            y += 28;
+            y += 30;
         }
 
         void AddRow(Panel parent, string titleJa, string titleEn, string descJa, string descEn, Control control, ref int y)
