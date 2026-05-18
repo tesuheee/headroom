@@ -1601,7 +1601,7 @@ namespace AiUsageWebView2
             box.TextAlign = HorizontalAlignment.Right;
             box.BackColor = Color.FromArgb(26, 28, 38);
             box.ForeColor = Color.FromArgb(210, 214, 226);
-            box.Font = new Font("Yu Gothic UI", 9.5f);
+            box.Font = new Font("Yu Gothic UI", 11f);
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
@@ -2058,6 +2058,9 @@ namespace AiUsageWebView2
         static readonly Color ArrowFg    = Color.FromArgb(120, 140, 175);
         static readonly Color SelColor   = Color.FromArgb(30, 88, 160);
 
+        [DllImport("uxtheme.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hwnd, string app, string id);
+
         public DarkComboBox()
         {
             DrawMode      = DrawMode.OwnerDrawFixed;
@@ -2067,6 +2070,12 @@ namespace AiUsageWebView2
             BackColor     = BgColor;
             ForeColor     = TextColor;
             DrawItem     += OnDrawItem;
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            SetWindowTheme(Handle, "", "");
         }
 
         protected override void WndProc(ref Message m)
@@ -2089,8 +2098,8 @@ namespace AiUsageWebView2
             if (SelectedIndex >= 0)
             {
                 string text = Items[SelectedIndex].ToString();
-                using (var b = new SolidBrush(TextColor))
-                    g.DrawString(text, Font, b, 10, (h - Font.Height) / 2 - 1);
+                TextRenderer.DrawText(g, text, Font,
+                    new Point(10, (h - Font.Height) / 2 - 1), TextColor);
             }
 
             int ax = w - aw - 1;
@@ -2115,9 +2124,9 @@ namespace AiUsageWebView2
             bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
             using (var bg = new SolidBrush(sel ? SelColor : Color.FromArgb(22, 24, 34)))
                 e.Graphics.FillRectangle(bg, e.Bounds);
-            using (var tb = new SolidBrush(TextColor))
-                e.Graphics.DrawString(box.Items[e.Index].ToString(), box.Font, tb,
-                    e.Bounds.X + 10, e.Bounds.Y + (e.Bounds.Height - box.Font.Height) / 2);
+            TextRenderer.DrawText(e.Graphics, box.Items[e.Index].ToString(), box.Font,
+                new Point(e.Bounds.X + 10, e.Bounds.Y + (e.Bounds.Height - box.Font.Height) / 2),
+                TextColor);
         }
     }
 
@@ -2128,11 +2137,19 @@ namespace AiUsageWebView2
         [DllImport("user32.dll")] static extern IntPtr GetWindowDC(IntPtr h);
         [DllImport("user32.dll")] static extern int    ReleaseDC(IntPtr h, IntPtr dc);
         [DllImport("user32.dll")] static extern bool   GetWindowRect(IntPtr h, out RECT r);
+        [DllImport("uxtheme.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hwnd, string app, string id);
 
         [StructLayout(LayoutKind.Sequential)]
         struct RECT { public int Left, Top, Right, Bottom; }
 
         public DarkTextBox() { AutoSize = false; }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            SetWindowTheme(Handle, "", "");
+        }
 
         protected override void WndProc(ref Message m)
         {
