@@ -1322,8 +1322,6 @@ namespace AiUsageWebView2
         readonly DarkTextBox resetSize = new DarkTextBox();
         readonly DarkTextBox warningPercent = new DarkTextBox();
         readonly DarkTextBox criticalPercent = new DarkTextBox();
-        readonly DarkTextBox warningColor = new DarkTextBox();
-        readonly DarkTextBox criticalColor = new DarkTextBox();
 
         public SettingsForm(WidgetSettings settings, Action preview)
         {
@@ -1364,8 +1362,8 @@ namespace AiUsageWebView2
             Controls.Add(cancel);
             Controls.Add(ok);
 
-            Controls.Add(new Panel { Location = new Point(0, 56), Width = Width, Height = 1, BackColor = Color.FromArgb(36, 54, 80) });
-            Controls.Add(new Panel { Location = new Point(440, 57), Width = 1, Height = Height - 57, BackColor = Color.FromArgb(24, 38, 60) });
+            Controls.Add(new Panel { Location = new Point(0, 56), Width = Width, Height = 1, BackColor = Color.FromArgb(42, 42, 48) });
+            Controls.Add(new Panel { Location = new Point(440, 57), Width = 1, Height = Height - 57, BackColor = Color.FromArgb(32, 32, 38) });
 
             var leftCard = SettingsCard(0, 57, 440, Height - 57);
             var rightCard = SettingsCard(441, 57, 439, Height - 57);
@@ -1403,8 +1401,8 @@ namespace AiUsageWebView2
             AddRow(rightCard, "ラベル文字サイズ", "Label font size", "", "", labelSize, ref rightY);
             AddRow(rightCard, "パーセント文字サイズ", "Percent font size", "", "", percentSize, ref rightY);
             AddRow(rightCard, "リセット表示文字サイズ", "Reset text size", "", "", resetSize, ref rightY);
-            AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, ref rightY, 1, 99);
-            AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref rightY, 1, 99);
+            AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -1558,19 +1556,10 @@ namespace AiUsageWebView2
             };
         }
 
-        void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, TextBox colorBox, string colorValue, ref int y, int min, int max)
+        void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, ref int y, int min, int max)
         {
-            var panel = new Panel { Width = 190, Height = 34, BackColor = Color.Transparent };
             StyleNumber(box, value, min, max);
-            box.Location = new Point(0, 0);
-            box.Width = 84;
-            colorBox.Text = colorValue;
-            colorBox.Location = new Point(96, 0);
-            colorBox.Width = 84;
-            StyleTextBox(colorBox);
-            panel.Controls.Add(box);
-            panel.Controls.Add(colorBox);
-            AddRow(parent, titleJa, titleEn, descJa, descEn, panel, ref y);
+            AddRow(parent, titleJa, titleEn, descJa, descEn, box, ref y);
         }
 
         void SetupCombo(DarkComboBox box, string value, string[] items)
@@ -1665,8 +1654,6 @@ namespace AiUsageWebView2
             warningPercent.TextChanged += apply;
             criticalPercent.TextChanged += apply;
             topMost.CheckedChanged += apply;
-            warningColor.TextChanged += apply;
-            criticalColor.TextChanged += apply;
         }
 
         void ReloadComboItems()
@@ -1737,8 +1724,6 @@ namespace AiUsageWebView2
             int critical = ReadBoxInt(criticalPercent, settings.CriticalRemainingPercent, 1, 99);
             settings.WarningRemainingPercent = Math.Max(critical, warning);
             settings.CriticalRemainingPercent = Math.Min(critical, settings.WarningRemainingPercent);
-            settings.WarningColor = NormalizeColorText(warningColor.Text, settings.WarningColor);
-            settings.CriticalColor = NormalizeColorText(criticalColor.Text, settings.CriticalColor);
             settings.AlwaysOnTop = topMost.Checked;
         }
 
