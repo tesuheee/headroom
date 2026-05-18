@@ -149,7 +149,8 @@ namespace AiUsageWebView2
         {
             if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
             TimeSpan untilReset;
-            if (TryGetResetRemaining(service.Data.FiveHourReset, false, out untilReset) &&
+            if (settings.FinalRefreshEnabled &&
+                TryGetResetRemaining(service.Data.FiveHourReset, false, out untilReset) &&
                 untilReset.TotalMinutes > 0 &&
                 untilReset.TotalMinutes <= settings.FinalRefreshWindowMinutes)
                 return settings.FinalRefreshIntervalMinutes;
@@ -220,8 +221,10 @@ namespace AiUsageWebView2
                 };
                 view.CoreWebView2.Navigate(service.Url);
             };
+            TopMost = false;
             login.FormClosed += async (s, e) =>
             {
+                TopMost = settings.AlwaysOnTop;
                 await RefreshServiceAsync(service, service.Name == "Claude" ? claudeView : codexView, true);
             };
             login.Show(this);
@@ -474,6 +477,16 @@ namespace AiUsageWebView2
                 Invalidate();
                 return;
             }
+            if (key == "layout")
+            {
+                bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
+                settings.LayoutMode = vertical ? "horizontal" : "vertical";
+                ApplyLayoutMinimumSize();
+                ApplyIdealSize();
+                settings.Save();
+                Invalidate();
+                return;
+            }
             if (key == "settings")
             {
                 ShowSettingsDialog();
@@ -499,6 +512,7 @@ namespace AiUsageWebView2
         {
             if (key == "close") return T("閉じる", "Close");
             if (key == "pin") return T(settings.AlwaysOnTop ? "最前面を解除" : "最前面に固定", settings.AlwaysOnTop ? "Unpin from top" : "Always on top");
+            if (key == "layout") return string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase) ? T("横並びに切り替え", "Switch to horizontal") : T("縦並びに切り替え", "Switch to vertical");
             if (key == "settings") return T("設定", "Settings");
             if (key.EndsWith("-refresh")) return T("更新", "Refresh");
             if (key.EndsWith("-boost"))
@@ -623,9 +637,10 @@ namespace AiUsageWebView2
             bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
             bool twoServices = settings.ShowClaude && settings.ShowCodex;
             int idealW, idealH;
-            if      (twoServices && !vertical) { idealW = 760; idealH = 170; }
-            else if (twoServices)              { idealW = 420; idealH = 340; }
-            else                               { idealW = 420; idealH = 170; }
+            // card unit = 360px: vertical W=404, horizontal W=2*360+10+44=774
+            if      (twoServices && !vertical) { idealW = 774; idealH = 170; }
+            else if (twoServices)              { idealW = 404; idealH = 340; }
+            else                               { idealW = 404; idealH = 170; }
             Width  = Math.Max(MinimumSize.Width,  idealW);
             Height = Math.Max(MinimumSize.Height, idealH);
             settings.Width  = Width;
@@ -635,15 +650,18 @@ namespace AiUsageWebView2
         void DrawSideRail(Graphics g)
         {
             int x = ClientSize.Width - 24;
-            int closeY = 12;
-            int pinY = 46;
-            int settingsY = 80;
-            hits["close"] = new Rectangle(x - 6, closeY - 6, 28, 28);
-            hits["pin"] = new Rectangle(x - 6, pinY - 6, 28, 28);
-            hits["settings"] = new Rectangle(x - 6, settingsY - 6, 28, 28);
+            int closeY    = 12;
+            int pinY      = 46;
+            int layoutY   = 80;
+            int settingsY = 114;
+            hits["close"]   = new Rectangle(x - 6, closeY    - 6, 28, 28);
+            hits["pin"]     = new Rectangle(x - 6, pinY      - 6, 28, 28);
+            hits["layout"]  = new Rectangle(x - 6, layoutY   - 6, 28, 28);
+            hits["settings"]= new Rectangle(x - 6, settingsY - 6, 28, 28);
 
-            DrawIconButton(g, "close", x, closeY, Color.FromArgb(160, 160, 165), DrawCloseIcon);
-            DrawIconButton(g, "pin", x, pinY, settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "close",    x, closeY,    Color.FromArgb(160, 160, 165), DrawCloseIcon);
+            DrawIconButton(g, "pin",      x, pinY,      settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "layout",   x, layoutY,   Color.FromArgb(110, 120, 140), DrawLayoutIcon);
             DrawIconButton(g, "settings", x, settingsY, Color.FromArgb(130, 130, 135), DrawGearIcon);
         }
 
@@ -829,6 +847,7 @@ namespace AiUsageWebView2
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
+            bool atLimit = pct.HasValue && (showUsed ? pct.Value >= 100 : pct.Value <= 0);
             bool warning = pct.HasValue && !limit && (showUsed ? 100 - pct.Value : pct.Value) <= settings.WarningRemainingPercent;
             Color rowColor = RowColor(pct, showUsed, accent);
             Color numColor = limit ? Color.FromArgb(255, 130, 130) : (warning ? Color.FromArgb(245, 200, 100) : Color.FromArgb(240, 242, 248));
@@ -852,7 +871,7 @@ namespace AiUsageWebView2
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
             {
-                if (limit)
+                if (atLimit)
                     using (var boldReset = new Font(resetFont, FontStyle.Bold))
                         g.DrawString(reset, boldReset, white, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
                 else
@@ -1144,7 +1163,7 @@ namespace AiUsageWebView2
                 new Point(cx + 3, cy - 1),
                 new Point(cx - 1, cy - 1),
             };
-            Color boltColor = on ? Color.FromArgb(255, 220, 60) : (hover ? Color.FromArgb(210, 215, 220) : Color.FromArgb(160, 165, 172));
+            Color boltColor = on ? Color.FromArgb(255, 220, 60) : (hover ? Color.FromArgb(225, 228, 232) : Color.FromArgb(200, 205, 212));
             using (var brush = new SolidBrush(boltColor))
                 g.FillPolygon(brush, bolt);
             using (var pen = new Pen(on ? Color.FromArgb(200, 170, 30) : Color.FromArgb(100, 105, 112), 0.6f))
@@ -1195,6 +1214,37 @@ namespace AiUsageWebView2
                 g.DrawEllipse(pen, cx - 5, cy - 5, 10, 10);
                 using (var fill = new SolidBrush(color))
                     g.FillEllipse(fill, cx - 2, cy - 2, 4, 4);
+            }
+        }
+
+        void DrawLayoutIcon(Graphics g, Rectangle r, Color color)
+        {
+            bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
+            using (var pen = new Pen(color, 1.3f))
+            using (var fill = new SolidBrush(Color.FromArgb(60, color)))
+            {
+                if (vertical)
+                {
+                    // 縦→横 への切り替えを示す: 左右に並んだ2矩形
+                    int bw = 7, bh = 10, gap = 2;
+                    int left  = r.X + r.Width / 2 - bw - gap / 2;
+                    int top   = r.Y + r.Height / 2 - bh / 2;
+                    g.FillRectangle(fill, left,          top, bw, bh);
+                    g.DrawRectangle(pen,  left,          top, bw, bh);
+                    g.FillRectangle(fill, left + bw + gap, top, bw, bh);
+                    g.DrawRectangle(pen,  left + bw + gap, top, bw, bh);
+                }
+                else
+                {
+                    // 横→縦 への切り替えを示す: 上下に並んだ2矩形
+                    int bw = 10, bh = 7, gap = 2;
+                    int left = r.X + r.Width  / 2 - bw / 2;
+                    int top  = r.Y + r.Height / 2 - bh - gap / 2;
+                    g.FillRectangle(fill, left, top,          bw, bh);
+                    g.DrawRectangle(pen,  left, top,          bw, bh);
+                    g.FillRectangle(fill, left, top + bh + gap, bw, bh);
+                    g.DrawRectangle(pen,  left, top + bh + gap, bw, bh);
+                }
             }
         }
 
@@ -1299,6 +1349,10 @@ namespace AiUsageWebView2
         readonly Action preview;
         readonly ToolTip tooltips = new ToolTip();
         bool _updatingLanguage;
+        DarkScrollContainer scrollContainer;
+        bool _resizing;
+        Point _resizeStart;
+        Size  _resizeStartSize;
 
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int sz);
@@ -1314,9 +1368,10 @@ namespace AiUsageWebView2
         readonly DarkTextBox boostInterval = new DarkTextBox();
         readonly DarkTextBox finalWindow = new DarkTextBox();
         readonly DarkTextBox finalInterval = new DarkTextBox();
-        readonly CheckBox topMost = new CheckBox();
-        readonly CheckBox showCodex = new CheckBox();
-        readonly CheckBox showClaude = new CheckBox();
+        readonly DarkComboBox finalRefreshMode = new DarkComboBox();
+        readonly DarkComboBox topMost   = new DarkComboBox();
+        readonly DarkComboBox showCodex  = new DarkComboBox();
+        readonly DarkComboBox showClaude = new DarkComboBox();
         readonly DarkTextBox labelSize = new DarkTextBox();
         readonly DarkTextBox percentSize = new DarkTextBox();
         readonly DarkTextBox resetSize = new DarkTextBox();
@@ -1330,7 +1385,7 @@ namespace AiUsageWebView2
             this.preview = preview;
             Text = T("設定", "Settings");
             Width = 880;
-            Height = 668;
+            Height = Math.Min(640, Screen.PrimaryScreen.WorkingArea.Height - 80);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -1363,29 +1418,32 @@ namespace AiUsageWebView2
             Controls.Add(ok);
 
             Controls.Add(new Panel { Location = new Point(0, 56), Width = Width, Height = 1, BackColor = Color.FromArgb(42, 42, 48) });
-            Controls.Add(new Panel { Location = new Point(440, 57), Width = 1, Height = Height - 57, BackColor = Color.FromArgb(32, 32, 38) });
 
-            var leftCard = SettingsCard(0, 57, 440, Height - 57);
-            var rightCard = SettingsCard(441, 57, 439, Height - 57);
-            Controls.Add(leftCard);
-            Controls.Add(rightCard);
+            scrollContainer = new DarkScrollContainer { Location = new Point(0, 57), Size = new Size(880, Height - 57) };
+            Controls.Add(scrollContainer);
+            var body = scrollContainer.Content;
+
+            var vDivider = new Panel { Location = new Point(440, 0), Width = 1, Height = 2000, BackColor = Color.FromArgb(32, 32, 38) };
+            body.Controls.Add(vDivider);
+            var leftCard = SettingsCard(0, 0, 440, 2000);
+            var rightCard = SettingsCard(441, 0, 439, 2000);
+            body.Controls.Add(leftCard);
+            body.Controls.Add(rightCard);
 
             int leftY = 12;
             AddSection(leftCard, "一般", "General", ref leftY);
             AddRow(leftCard, "Language", "Language", "", "", language, ref leftY);
-            topMost.Text = T("有効", "Enabled");
-            topMost.Tag = "有効|Enabled";
-            topMost.Checked = settings.AlwaysOnTop;
-            topMost.Width = 180;
-            topMost.Height = 30;
-            StylePillCheck(topMost);
+            SetupCombo(topMost, settings.AlwaysOnTop ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             AddRow(leftCard, "最前面に固定", "Always on top", "", "", topMost, ref leftY);
 
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
-            AddRow(leftCard, "表示するサービス", "Visible services", "", "", ServicePicker(), ref leftY);
+            SetupCombo(showCodex,  settings.ShowCodex  ? "show" : "hide", new[] { T("表示", "Show"), T("非表示", "Hide") });
+            SetupCombo(showClaude, settings.ShowClaude ? "show" : "hide", new[] { T("表示", "Show"), T("非表示", "Hide") });
+            AddRow(leftCard, "Codex", "Codex", "", "", showCodex,  ref leftY);
+            AddRow(leftCard, "Claude", "Claude", "", "", showClaude, ref leftY);
             AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
-            AddRow(leftCard, "Codex 表示", "Codex display", "", "", codexMode, ref leftY);
-            AddRow(leftCard, "Claude 表示", "Claude display", "", "", claudeMode, ref leftY);
+            AddRow(leftCard, "Codex の値", "Codex value", "", "", codexMode, ref leftY);
+            AddRow(leftCard, "Claude の値", "Claude value", "", "", claudeMode, ref leftY);
             AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
             AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
 
@@ -1394,8 +1452,10 @@ namespace AiUsageWebView2
             AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
             AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
             AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
-            AddRow(rightCard, "リセット前高頻度更新 (分)", "Pre-reset boost window (min)", "5時間枠リセット前にブーストを開始する分数。", "Minutes before 5h reset to start boosted refresh.", finalWindow, ref rightY);
-            AddRow(rightCard, "直前更新間隔 (分)", "Pre-reset interval (min)", "", "", finalInterval, ref rightY);
+            SetupCombo(finalRefreshMode, settings.FinalRefreshEnabled ? "enabled" : "disabled", new[] { T("する", "Enable"), T("しない", "Disable") });
+            AddRow(rightCard, "直近リセット前ブースト", "Pre-next-reset boost", "", "", finalRefreshMode, ref rightY);
+            AddRow(rightCard, "　開始 (分前)", "  Start (min before)", "", "", finalWindow, ref rightY);
+            AddRow(rightCard, "　更新間隔 (分)", "  Interval (min)", "", "", finalInterval, ref rightY);
 
             AddSection(rightCard, "見た目", "Appearance", ref rightY);
             AddRow(rightCard, "ラベル文字サイズ", "Label font size", "", "", labelSize, ref rightY);
@@ -1411,6 +1471,13 @@ namespace AiUsageWebView2
             SetupCombo(weeklyResetMode, settings.WeeklyResetMode, new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
             SetupCombo(language, settings.Language, new[] { "日本語", "English" });
             SetupNumbers();
+
+            int contentH = Math.Max(leftY + 16, rightY + 16);
+            leftCard.Height = contentH;
+            rightCard.Height = contentH;
+            vDivider.Height = contentH;
+            scrollContainer.SetContentHeight(contentH);
+            scrollContainer.AttachWheelToChildren();
 
             AcceptButton = ok;
             CancelButton = cancel;
@@ -1430,6 +1497,20 @@ namespace AiUsageWebView2
         {
             base.OnLoad(e);
             try { int r = 2; DwmSetWindowAttribute(Handle, 33, ref r, 4); } catch { }
+            var wa = Screen.FromControl(this).WorkingArea;
+            if (Bottom > wa.Bottom) Top = wa.Bottom - Height;
+            if (Top < wa.Top) Top = wa.Top;
+            if (Right > wa.Right) Left = wa.Right - Width;
+            if (Left < wa.Left) Left = wa.Left;
+            MinimumSize = new Size(600, 300);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (scrollContainer != null)
+                scrollContainer.Size = new Size(Width, Height - 57);
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1438,7 +1519,6 @@ namespace AiUsageWebView2
             var g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-            // Header gradient matching main widget card
             using (var hg = new System.Drawing.Drawing2D.LinearGradientBrush(
                 new Rectangle(0, 0, Width, 57),
                 Color.FromArgb(30, 30, 34),
@@ -1446,11 +1526,51 @@ namespace AiUsageWebView2
                 90f))
                 g.FillRectangle(hg, 0, 0, Width, 56);
 
-            // Outer border matching main card style
             using (var b1 = new Pen(Color.FromArgb(48, 48, 54)))
                 g.DrawRectangle(b1, 0, 0, Width - 1, Height - 1);
             using (var b2 = new Pen(Color.FromArgb(28, 255, 255, 255)))
                 g.DrawRectangle(b2, 1, 1, Width - 3, Height - 3);
+
+            // Resize grip (bottom-right)
+            int gx = Width - 14, gy = Height - 14;
+            using (var p = new Pen(Color.FromArgb(70, 70, 80), 1.2f))
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    int d = i * 5;
+                    g.DrawLine(p, gx + d, Height - 4, Width - 4, gy + d);
+                }
+            }
+        }
+
+        bool IsSettingsResizeGrip(Point pt) { return pt.X >= Width - 18 && pt.Y >= Height - 18; }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left && IsSettingsResizeGrip(e.Location))
+            {
+                _resizing = true;
+                _resizeStart = e.Location;
+                _resizeStartSize = Size;
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            Cursor = IsSettingsResizeGrip(e.Location) ? Cursors.SizeNWSE : Cursors.Default;
+            if (!_resizing) return;
+            int dw = e.X - _resizeStart.X;
+            int dh = e.Y - _resizeStart.Y;
+            Width  = Math.Max(MinimumSize.Width,  _resizeStartSize.Width  + dw);
+            Height = Math.Max(MinimumSize.Height, _resizeStartSize.Height + dh);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            _resizing = false;
         }
 
         const int WM_NCHITTEST = 0x84;
@@ -1517,45 +1637,6 @@ namespace AiUsageWebView2
             };
         }
 
-        Panel ServicePicker()
-        {
-            var panel = new Panel { Width = 190, Height = 36, BackColor = Color.Transparent };
-            StylePlainCheck(showCodex, T("Codex", "Codex"), settings.ShowCodex, 0);
-            StylePlainCheck(showClaude, T("Claude", "Claude"), settings.ShowClaude, 90);
-            panel.Controls.Add(showCodex);
-            panel.Controls.Add(showClaude);
-            return panel;
-        }
-
-        void StylePlainCheck(CheckBox box, string text, bool value, int x)
-        {
-            box.Text = text;
-            box.Checked = value;
-            box.Location = new Point(x, 3);
-            box.Width = 86;
-            box.Height = 30;
-            StylePillCheck(box);
-        }
-
-        void StylePillCheck(CheckBox box)
-        {
-            box.Appearance = Appearance.Button;
-            box.FlatStyle = FlatStyle.Flat;
-            box.TextAlign = ContentAlignment.MiddleCenter;
-            box.Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold);
-            box.ForeColor = Color.FromArgb(218, 222, 232);
-            box.BackColor = box.Checked ? Color.FromArgb(45, 132, 235) : Color.FromArgb(43, 43, 48);
-            box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(65, 65, 72);
-            box.FlatAppearance.CheckedBackColor = Color.FromArgb(45, 132, 235);
-            box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(55, 55, 62);
-            box.CheckedChanged += (s, e) =>
-            {
-                box.BackColor = box.Checked ? Color.FromArgb(45, 132, 235) : Color.FromArgb(43, 43, 48);
-                box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(65, 65, 72);
-                box.FlatAppearance.MouseOverBackColor = box.Checked ? Color.FromArgb(68, 152, 250) : Color.FromArgb(55, 55, 62);
-            };
-        }
-
         void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, ref int y, int min, int max)
         {
             StyleNumber(box, value, min, max);
@@ -1571,6 +1652,9 @@ namespace AiUsageWebView2
             if (box == layoutMode)                              box.SelectedIndex = string.Equals(value, "vertical",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            else if (box == finalRefreshMode)                  box.SelectedIndex = string.Equals(value, "disabled",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            else if (box == topMost)                           box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            else if (box == showCodex || box == showClaude)   box.SelectedIndex = string.Equals(value, "show",      StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == language)                          box.SelectedIndex = string.Equals(value, "en",        StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
 
@@ -1592,7 +1676,7 @@ namespace AiUsageWebView2
             box.Width = 175;
             box.Height = 28;
             box.TextAlign = HorizontalAlignment.Right;
-            box.BackColor = Color.FromArgb(26, 28, 38);
+            box.BackColor = Color.FromArgb(26, 28, 44);
             box.ForeColor = Color.FromArgb(210, 214, 226);
             box.Font = new Font("Yu Gothic UI", 11f);
             box.BorderStyle = BorderStyle.FixedSingle;
@@ -1607,7 +1691,7 @@ namespace AiUsageWebView2
 
         void StyleTextBox(TextBox box)
         {
-            box.BackColor = Color.FromArgb(26, 28, 38);
+            box.BackColor = Color.FromArgb(26, 28, 44);
             box.ForeColor = Color.FromArgb(210, 214, 226);
             box.Font = new Font("Yu Gothic UI", 9.5f);
             box.BorderStyle = BorderStyle.FixedSingle;
@@ -1641,8 +1725,8 @@ namespace AiUsageWebView2
             boostInterval.TextChanged += apply;
             finalWindow.TextChanged += apply;
             finalInterval.TextChanged += apply;
-            showCodex.CheckedChanged += apply;
-            showClaude.CheckedChanged += apply;
+            showCodex.SelectedIndexChanged  += apply;
+            showClaude.SelectedIndexChanged += apply;
             layoutMode.SelectedIndexChanged += apply;
             codexMode.SelectedIndexChanged += apply;
             claudeMode.SelectedIndexChanged += apply;
@@ -1653,16 +1737,20 @@ namespace AiUsageWebView2
             resetSize.TextChanged += apply;
             warningPercent.TextChanged += apply;
             criticalPercent.TextChanged += apply;
-            topMost.CheckedChanged += apply;
+            topMost.SelectedIndexChanged += apply;
+            finalRefreshMode.SelectedIndexChanged += apply;
         }
 
         void ReloadComboItems()
         {
-            int layoutSel = layoutMode.SelectedIndex;
-            int codexSel  = codexMode.SelectedIndex;
-            int claudeSel = claudeMode.SelectedIndex;
-            int fiveSel   = fiveResetMode.SelectedIndex;
-            int weeklySel = weeklyResetMode.SelectedIndex;
+            int layoutSel   = layoutMode.SelectedIndex;
+            int codexSel    = codexMode.SelectedIndex;
+            int claudeSel   = claudeMode.SelectedIndex;
+            int fiveSel     = fiveResetMode.SelectedIndex;
+            int weeklySel   = weeklyResetMode.SelectedIndex;
+            int topMostSel  = topMost.SelectedIndex;
+            int showCxSel   = showCodex.SelectedIndex;
+            int showClSel   = showClaude.SelectedIndex;
 
             layoutMode.Items.Clear();
             layoutMode.Items.AddRange(new[] { T("横", "Wide"), T("縦", "Tall") });
@@ -1683,6 +1771,23 @@ namespace AiUsageWebView2
             weeklyResetMode.Items.Clear();
             weeklyResetMode.Items.AddRange(new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
             weeklyResetMode.SelectedIndex = Math.Max(0, Math.Min(1, weeklySel));
+
+            int finalRefreshSel = finalRefreshMode.SelectedIndex;
+            finalRefreshMode.Items.Clear();
+            finalRefreshMode.Items.AddRange(new[] { T("する", "Enable"), T("しない", "Disable") });
+            finalRefreshMode.SelectedIndex = Math.Max(0, Math.Min(1, finalRefreshSel));
+
+            topMost.Items.Clear();
+            topMost.Items.AddRange(new[] { T("有効", "Enabled"), T("無効", "Disabled") });
+            topMost.SelectedIndex = Math.Max(0, Math.Min(1, topMostSel));
+
+            showCodex.Items.Clear();
+            showCodex.Items.AddRange(new[] { T("表示", "Show"), T("非表示", "Hide") });
+            showCodex.SelectedIndex = Math.Max(0, Math.Min(1, showCxSel));
+
+            showClaude.Items.Clear();
+            showClaude.Items.AddRange(new[] { T("表示", "Show"), T("非表示", "Hide") });
+            showClaude.SelectedIndex = Math.Max(0, Math.Min(1, showClSel));
         }
 
         void UpdateTaggedControls(Control parent, bool en)
@@ -1709,9 +1814,9 @@ namespace AiUsageWebView2
             settings.BoostIntervalMinutes = ReadBoxInt(boostInterval, settings.BoostIntervalMinutes, 1, 240);
             settings.FinalRefreshWindowMinutes = ReadBoxInt(finalWindow, settings.FinalRefreshWindowMinutes, 1, 120);
             settings.FinalRefreshIntervalMinutes = ReadBoxInt(finalInterval, settings.FinalRefreshIntervalMinutes, 1, 30);
-            if (!showCodex.Checked && !showClaude.Checked) showClaude.Checked = true;
-            settings.ShowCodex = showCodex.Checked;
-            settings.ShowClaude = showClaude.Checked;
+            if (showCodex.SelectedIndex == 1 && showClaude.SelectedIndex == 1) showClaude.SelectedIndex = 0;
+            settings.ShowCodex  = showCodex.SelectedIndex  == 0;
+            settings.ShowClaude = showClaude.SelectedIndex == 0;
             settings.LayoutMode = layoutMode.SelectedIndex == 1 ? "vertical" : "horizontal";
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
@@ -1724,7 +1829,8 @@ namespace AiUsageWebView2
             int critical = ReadBoxInt(criticalPercent, settings.CriticalRemainingPercent, 1, 99);
             settings.WarningRemainingPercent = Math.Max(critical, warning);
             settings.CriticalRemainingPercent = Math.Min(critical, settings.WarningRemainingPercent);
-            settings.AlwaysOnTop = topMost.Checked;
+            settings.FinalRefreshEnabled = finalRefreshMode.SelectedIndex == 0;
+            settings.AlwaysOnTop = topMost.SelectedIndex == 0;
         }
 
         string T(string ja, string en)
@@ -1842,13 +1948,14 @@ namespace AiUsageWebView2
         public int BoostIntervalMinutes = 1;
         public int FinalRefreshWindowMinutes = 15;
         public int FinalRefreshIntervalMinutes = 1;
-        public bool AlwaysOnTop = true;
+        public bool FinalRefreshEnabled = false;
+        public bool AlwaysOnTop = false;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
         public string LayoutMode = "horizontal";
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
-        public string FiveHourResetMode = "time";
+        public string FiveHourResetMode = "relative";
         public string WeeklyResetMode = "time";
         public float LabelFontSize = 10.8f;
         public float PercentFontSize = 16.5f;
@@ -1882,6 +1989,7 @@ namespace AiUsageWebView2
                 s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
                 s.FinalRefreshWindowMinutes = ReadInt(json, "finalRefreshWindowMinutes", s.FinalRefreshWindowMinutes);
                 s.FinalRefreshIntervalMinutes = ReadInt(json, "finalRefreshIntervalMinutes", s.FinalRefreshIntervalMinutes);
+                s.FinalRefreshEnabled = ReadBool(json, "finalRefreshEnabled", s.FinalRefreshEnabled);
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
                 s.ShowCodex = ReadBool(json, "showCodex", s.ShowCodex);
                 s.ShowClaude = ReadBool(json, "showClaude", s.ShowClaude);
@@ -1919,6 +2027,7 @@ namespace AiUsageWebView2
             BoostIntervalMinutes = other.BoostIntervalMinutes;
             FinalRefreshWindowMinutes = other.FinalRefreshWindowMinutes;
             FinalRefreshIntervalMinutes = other.FinalRefreshIntervalMinutes;
+            FinalRefreshEnabled = other.FinalRefreshEnabled;
             AlwaysOnTop = other.AlwaysOnTop;
             ShowCodex = other.ShowCodex;
             ShowClaude = other.ShowClaude;
@@ -1951,6 +2060,7 @@ namespace AiUsageWebView2
                     "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +
                     "  \"finalRefreshWindowMinutes\": " + FinalRefreshWindowMinutes + ",\r\n" +
                     "  \"finalRefreshIntervalMinutes\": " + FinalRefreshIntervalMinutes + ",\r\n" +
+                    "  \"finalRefreshEnabled\": " + (FinalRefreshEnabled ? "true" : "false") + ",\r\n" +
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
                     "  \"showCodex\": " + (ShowCodex ? "true" : "false") + ",\r\n" +
                     "  \"showClaude\": " + (ShowClaude ? "true" : "false") + ",\r\n" +
@@ -2126,6 +2236,7 @@ namespace AiUsageWebView2
         [DllImport("user32.dll")] static extern IntPtr GetWindowDC(IntPtr h);
         [DllImport("user32.dll")] static extern int    ReleaseDC(IntPtr h, IntPtr dc);
         [DllImport("user32.dll")] static extern bool   GetWindowRect(IntPtr h, out RECT r);
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hwnd, int msg, int wParam, int lParam);
         [DllImport("uxtheme.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
         static extern int SetWindowTheme(IntPtr hwnd, string app, string id);
 
@@ -2138,13 +2249,15 @@ namespace AiUsageWebView2
         {
             base.OnHandleCreated(e);
             SetWindowTheme(Handle, "", "");
+            SendMessage(Handle, 0xD3, 3, (8 << 16) | 4);
         }
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x85) { DrawBorder(); return; }              // WM_NCPAINT: skip system grey border
+            if (m.Msg == 0x86) { m.Result = (IntPtr)1; DrawBorder(); return; } // WM_NCACTIVATE: suppress reframe
             base.WndProc(ref m);
-            if (m.Msg == 0x85 || m.Msg == 0x86) // WM_NCPAINT, WM_NCACTIVATE
-                DrawBorder();
+            if (m.Msg == 0x0F) DrawBorder(); // WM_PAINT: re-apply after client repaint
         }
 
         void DrawBorder()
@@ -2160,6 +2273,109 @@ namespace AiUsageWebView2
                     g.DrawRectangle(p, 0, 0, r.Right - r.Left - 1, r.Bottom - r.Top - 1);
             }
             finally { ReleaseDC(Handle, dc); }
+        }
+    }
+
+    sealed class DarkScrollContainer : Panel
+    {
+        public readonly Panel Content;
+        readonly Panel track  = new Panel();
+        readonly Panel thumb  = new Panel();
+
+        int scrollY;
+        int contentH;
+        bool dragging;
+        int  dragStartScreenY;
+        int  dragStartScrollY;
+
+        const int TrackW    = 7;
+        const int MinThumbH = 24;
+
+        public DarkScrollContainer()
+        {
+            Content = new Panel { Location = Point.Empty, BackColor = Color.Transparent };
+            track.BackColor = Color.FromArgb(20, 20, 26);
+            thumb.BackColor = Color.FromArgb(52, 60, 80);
+            thumb.Width     = TrackW - 2;
+
+            Controls.Add(Content);
+            Controls.Add(track);
+            track.Controls.Add(thumb);
+
+            thumb.MouseDown += (s, e) =>
+            {
+                if (e.Button != MouseButtons.Left) return;
+                dragging = true;
+                dragStartScreenY = thumb.PointToScreen(e.Location).Y;
+                dragStartScrollY = scrollY;
+            };
+            thumb.MouseMove += (s, e) =>
+            {
+                if (!dragging) return;
+                int dy = thumb.PointToScreen(e.Location).Y - dragStartScreenY;
+                int trackRange = Math.Max(1, Height - thumb.Height);
+                DoScroll(dragStartScrollY + (int)((double)dy * (contentH - Height) / trackRange));
+            };
+            thumb.MouseUp   += (s, e) => dragging = false;
+            track.MouseDown += (s, e) =>
+            {
+                if (e.Y < thumb.Top)    DoScroll(scrollY - Height);
+                else if (e.Y > thumb.Bottom) DoScroll(scrollY + Height);
+            };
+            MouseWheel += (s, e) => DoScroll(scrollY - e.Delta / 3);
+        }
+
+        public void SetContentHeight(int h)
+        {
+            contentH = h;
+            UpdateLayout();
+        }
+
+        public void AttachWheelToChildren()
+        {
+            AttachWheel(this);
+        }
+
+        void AttachWheel(Control c)
+        {
+            foreach (Control child in c.Controls)
+            {
+                if (child == track) continue;
+                child.MouseWheel += (s, e) => DoScroll(scrollY - e.Delta / 3);
+                AttachWheel(child);
+            }
+        }
+
+        protected override void OnResize(EventArgs e) { base.OnResize(e); UpdateLayout(); }
+
+        void DoScroll(int target)
+        {
+            int maxScroll = Math.Max(0, contentH - Height);
+            scrollY = Math.Max(0, Math.Min(target, maxScroll));
+            UpdateLayout();
+        }
+
+        void UpdateLayout()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            bool need = contentH > Height;
+            track.Visible = need;
+            if (need)
+            {
+                Content.Size = new Size(Width - TrackW - 1, contentH);
+                track.SetBounds(Width - TrackW, 0, TrackW, Height);
+                double ratio  = (double)Height / contentH;
+                int thumbH    = Math.Max(MinThumbH, (int)(Height * ratio));
+                double frac   = contentH > Height ? (double)scrollY / (contentH - Height) : 0;
+                int thumbTop  = (int)(frac * (Height - thumbH));
+                thumb.SetBounds(1, thumbTop, TrackW - 2, thumbH);
+            }
+            else
+            {
+                scrollY = 0;
+                Content.Size = new Size(Width, contentH);
+            }
+            Content.Location = new Point(0, -scrollY);
         }
     }
 }
