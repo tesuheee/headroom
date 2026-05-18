@@ -583,6 +583,11 @@ namespace Headroom
                 Invalidate();
                 return;
             }
+            if (key == "settings")
+            {
+                ShowSettingsDialog();
+                return;
+            }
             if (key == "close")
             {
                 Close();
@@ -606,6 +611,7 @@ namespace Headroom
             if (key == "token") return T(settings.ClaudeShowUsed ? "残量表示に切り替え" : "使用量表示に切り替え", settings.ClaudeShowUsed ? "Switch to remaining" : "Switch to used");
             if (key == "fiveReset") return T(string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "5時間リセット: カウントダウン→時刻表示" : "5時間リセット: 時刻→カウントダウン表示", string.Equals(settings.FiveHourResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "5h reset: countdown → clock time" : "5h reset: clock time → countdown");
             if (key == "weekReset") return T(string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "週リセット: カウントダウン→時刻表示" : "週リセット: 時刻→カウントダウン表示", string.Equals(settings.WeeklyResetMode, "relative", StringComparison.OrdinalIgnoreCase) ? "Weekly reset: countdown → clock time" : "Weekly reset: clock time → countdown");
+            if (key == "settings") return T("設定", "Settings");
             if (key.EndsWith("-refresh")) return T("更新", "Refresh");
             if (key.EndsWith("-boost"))
             {
@@ -720,9 +726,9 @@ namespace Headroom
         {
             bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
             bool twoServices = settings.ShowClaude && settings.ShowCodex;
-            if (twoServices && vertical)  MinimumSize = new Size(270, 230);
-            else if (twoServices)         MinimumSize = new Size(520, 110);
-            else                          MinimumSize = new Size(270, 110);
+            if (twoServices && vertical)  MinimumSize = new Size(270, 250);
+            else if (twoServices)         MinimumSize = new Size(520, 154);
+            else                          MinimumSize = new Size(270, 154);
             if (Width < MinimumSize.Width) Width = MinimumSize.Width;
             if (Height < MinimumSize.Height) Height = MinimumSize.Height;
         }
@@ -745,24 +751,27 @@ namespace Headroom
 
         void DrawSideRail(Graphics g)
         {
-            int x        = ClientSize.Width - 24;
-            int closeY   = 6;
-            int pinY     = closeY + 28;
-            int tokenY   = pinY + 28;
-            int weekY    = ClientSize.Height - 12;
-            int fiveY    = weekY - 28;
+            int x         = ClientSize.Width - 24;
+            int closeY    = 4;
+            int pinY      = 30;
+            int tokenY    = 56;
+            int fiveY     = ClientSize.Height - 72;
+            int weekY     = ClientSize.Height - 46;
+            int settingsY = ClientSize.Height - 20;
 
-            hits["close"]      = new Rectangle(x - 6, closeY  - 6, 28, 28);
-            hits["pin"]        = new Rectangle(x - 6, pinY    - 6, 28, 28);
-            hits["token"]      = new Rectangle(x - 6, tokenY  - 6, 28, 28);
-            hits["fiveReset"]  = new Rectangle(x - 6, fiveY   - 6, 28, 28);
-            hits["weekReset"]  = new Rectangle(x - 6, weekY   - 6, 28, 28);
+            hits["close"]     = new Rectangle(x - 6, closeY    - 6, 28, 28);
+            hits["pin"]       = new Rectangle(x - 6, pinY      - 6, 28, 28);
+            hits["token"]     = new Rectangle(x - 6, tokenY    - 6, 28, 28);
+            hits["fiveReset"] = new Rectangle(x - 6, fiveY     - 6, 28, 28);
+            hits["weekReset"] = new Rectangle(x - 6, weekY     - 6, 28, 28);
+            hits["settings"]  = new Rectangle(x - 6, settingsY - 6, 28, 28);
 
-            DrawIconButton(g, "close",     x, closeY,  Color.FromArgb(160, 160, 165), DrawCloseIcon);
-            DrawIconButton(g, "pin",       x, pinY,    settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
-            DrawIconButton(g, "token",     x, tokenY,  Color.FromArgb(130, 145, 165), DrawTokenToggleIcon);
-            DrawIconButton(g, "fiveReset", x, fiveY,   Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
-            DrawIconButton(g, "weekReset", x, weekY,   Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
+            DrawIconButton(g, "close",     x, closeY,    Color.FromArgb(160, 160, 165), DrawCloseIcon);
+            DrawIconButton(g, "pin",       x, pinY,       settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "token",     x, tokenY,     Color.FromArgb(130, 145, 165), DrawTokenToggleIcon);
+            DrawIconButton(g, "fiveReset", x, fiveY,      Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
+            DrawIconButton(g, "weekReset", x, weekY,      Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
+            DrawIconButton(g, "settings",  x, settingsY,  Color.FromArgb(130, 130, 135), DrawGearIcon);
         }
 
         delegate void IconPainter(Graphics g, Rectangle r, Color color);
@@ -818,8 +827,8 @@ namespace Headroom
             using (var reset = new Font("Segoe UI", ResetFontSize, FontStyle.Regular))
             using (var num = new Font("Segoe UI", PercentFontSize, FontStyle.Bold))
             using (var white = new SolidBrush(Color.FromArgb(240, 242, 245)))
-            using (var muted = new SolidBrush(Color.FromArgb(170, 175, 185)))
-            using (var dim = new SolidBrush(Color.FromArgb(140, 145, 155)))
+            using (var muted = new SolidBrush(Color.FromArgb(210, 215, 228)))
+            using (var dim = new SolidBrush(Color.FromArgb(185, 190, 205)))
             {
                 g.DrawString(state.Name, title, white, x + 30, y + 10);
                 if (stale)
@@ -1601,7 +1610,7 @@ namespace Headroom
                 BackColor = Color.FromArgb(32, 32, 38),
                 ForeColor = Color.FromArgb(200, 206, 218),
                 Font = new Font("Yu Gothic UI", 10.5f),
-                CornerRadius = 8,
+                CornerRadius = 14,
                 HoverBackColor   = Color.FromArgb(48, 48, 56),
                 PressedBackColor = Color.FromArgb(28, 28, 34),
                 BorderColorNormal = Color.FromArgb(60, 60, 68)
@@ -1613,7 +1622,7 @@ namespace Headroom
                 BackColor = Color.FromArgb(45, 132, 235),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold),
-                CornerRadius = 8,
+                CornerRadius = 14,
                 HoverBackColor   = Color.FromArgb(72, 152, 250),
                 PressedBackColor = Color.FromArgb(35, 112, 210),
                 BorderColorNormal = Color.FromArgb(45, 132, 235)
@@ -1697,7 +1706,7 @@ namespace Headroom
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            try { int r = 2; DwmSetWindowAttribute(Handle, 33, ref r, 4); } catch { }
+            try { int r = 3; DwmSetWindowAttribute(Handle, 33, ref r, 4); } catch { }
             var wa = Screen.FromControl(this).WorkingArea;
             if (Bottom > wa.Bottom) Top = wa.Bottom - Height;
             if (Top < wa.Top) Top = wa.Top;
@@ -1822,7 +1831,7 @@ namespace Headroom
             }
             control.Location = new Point(parent.Width - 200, y + 11);
             parent.Controls.Add(control);
-            var line = new Panel { Location = new Point(24, y + rowH - 1), Width = parent.Width - 48, Height = 1, BackColor = Color.FromArgb(26, 26, 32) };
+            var line = new Panel { Location = new Point(24, y + rowH - 1), Width = parent.Width - 48, Height = 1, BackColor = Color.FromArgb(42, 42, 52) };
             parent.Controls.Add(line);
             y += rowH;
         }
@@ -2438,11 +2447,21 @@ namespace Headroom
                 if (_pressed && PressedBackColor != Color.Empty) fill = PressedBackColor;
                 else if (_hover && HoverBackColor != Color.Empty) fill = HoverBackColor;
 
-                using (var b = new SolidBrush(fill))
-                    g.FillPath(b, path);
+                Color topFill = _pressed ? fill : Color.FromArgb(
+                    Math.Min(255, fill.R + 18),
+                    Math.Min(255, fill.G + 18),
+                    Math.Min(255, fill.B + 22));
+                using (var grad = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    new Rectangle(0, 0, w + 1, h + 1), topFill, fill, 90f))
+                    g.FillPath(grad, path);
                 if (BorderColorNormal != Color.Empty)
                     using (var pen = new Pen(BorderColorNormal, 1f))
                         g.DrawPath(pen, path);
+                if (!_pressed)
+                    using (var hl = new Pen(Color.FromArgb(50, 255, 255, 255), 1f))
+                        g.DrawLine(hl, CornerRadius / 2, 2, w - CornerRadius / 2, 2);
+                using (var sh = new Pen(Color.FromArgb(24, 0, 0, 0), 1f))
+                    g.DrawLine(sh, CornerRadius / 2, h - 1, w - CornerRadius / 2, h - 1);
             }
 
             var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
