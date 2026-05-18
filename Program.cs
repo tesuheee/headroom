@@ -846,7 +846,7 @@ namespace AiUsageWebView2
             int barW = Math.Max(70, w - (barX - x) - 10);
             DrawBar(g, barX, barY, barW, 9, pct, rowColor);
 
-            string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English);
+            string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
                 g.DrawString(reset, resetFont, dim, barX, y + Math.Max(18, (int)Math.Round(settings.PercentFontSize * 1.0)));
             }
@@ -873,18 +873,29 @@ namespace AiUsageWebView2
             return ResetText(raw, string.Equals(mode, "time", StringComparison.OrdinalIgnoreCase), english);
         }
 
+        static string ResetText(string raw, string mode, bool english, bool weekly)
+        {
+            return ResetText(raw, string.Equals(mode, "time", StringComparison.OrdinalIgnoreCase), english, weekly);
+        }
+
         static string ResetText(string raw, bool preferAbsolute, bool english)
+        {
+            return ResetText(raw, preferAbsolute, english, true);
+        }
+
+        static string ResetText(string raw, bool preferAbsolute, bool english, bool weekly)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
             var lower = raw.ToLowerInvariant();
             string cleaned = Regex.Replace(raw, @"^\s*リセット\s*[：:]\s*", "").Trim();
             if (cleaned.Contains("リセットまで")) return english ? cleaned.Replace("リセットまで", "Reset in") : cleaned;
-            var relative = RelativeResetText(cleaned, preferAbsolute, english);
+            var relative = RelativeResetText(cleaned, preferAbsolute, english, weekly);
             if (!string.IsNullOrEmpty(relative)) return relative;
 
             DateTime target;
             if (TryParseResetTarget(cleaned, out target))
             {
+                if (!weekly && !IsPlausibleFiveHourReset(target)) return "";
                 if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(target, english);
                 return (english ? "Reset in " : "リセットまで ") + FormatDuration(target - DateTime.Now, english);
             }
@@ -905,13 +916,25 @@ namespace AiUsageWebView2
 
         static string RelativeResetText(string text, bool preferAbsolute, bool english)
         {
+            return RelativeResetText(text, preferAbsolute, english, true);
+        }
+
+        static string RelativeResetText(string text, bool preferAbsolute, bool english, bool weekly)
+        {
             var m = Regex.Match(text, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
             if (!m.Success) return "";
             int hours = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
             int minutes = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
             var span = new TimeSpan(hours, minutes, 0);
+            if (!weekly && span.TotalHours > 5.5) return "";
             if (preferAbsolute) return (english ? "Reset " : "リセット ") + FormatResetTime(DateTime.Now.Add(span), english);
             return (english ? "Reset in " : "リセットまで ") + FormatDuration(span, english);
+        }
+
+        static bool IsPlausibleFiveHourReset(DateTime target)
+        {
+            var remaining = target - DateTime.Now;
+            return remaining.TotalMinutes >= -1 && remaining.TotalHours <= 5.5;
         }
 
         static bool TryParseResetTarget(string text, out DateTime target)
