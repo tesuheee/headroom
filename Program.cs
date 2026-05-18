@@ -99,7 +99,7 @@ namespace Headroom
             KeyDown += async (s, e) =>
             {
                 if (e.KeyCode == Keys.F5) await RefreshAllAsync(true);
-                if (e.KeyCode == Keys.S || e.KeyCode == Keys.F2) ShowSettingsDialog();
+                if (e.KeyCode == Keys.S || e.KeyCode == Keys.F2) await ShowSettingsDialog();
             };
 
             paintTimer.Interval = 40;
@@ -318,6 +318,21 @@ namespace Headroom
                 await RefreshServiceAsync(service, service.Name == "Claude" ? claudeView : codexView, true);
             };
             login.Show(this);
+        }
+
+        async Task LogoutServiceAsync(ServiceState service)
+        {
+            await InitializeWebViewsAsync();
+            var view = service.Name == "Claude" ? claudeView : codexView;
+            if (view.CoreWebView2 == null) return;
+            string host = service.Name == "Claude" ? "https://claude.ai" : "https://chatgpt.com";
+            var cookies = await view.CoreWebView2.CookieManager.GetCookiesAsync(host);
+            foreach (var c in cookies)
+                view.CoreWebView2.CookieManager.DeleteCookie(c);
+            view.CoreWebView2.Navigate("about:blank");
+            service.Data = new UsageData { Status = "login_required" };
+            service.LastRefresh = DateTime.MinValue;
+            Invalidate();
         }
 
         async Task<string> ScrapeAsync(WebView2 view, string url)
@@ -592,7 +607,7 @@ namespace Headroom
             }
             if (key == "settings")
             {
-                ShowSettingsDialog();
+                await ShowSettingsDialog();
                 return;
             }
             if (key == "close")
@@ -1203,8 +1218,10 @@ namespace Headroom
                     g.DrawPath(border, p);
             }
             using (var f = new Font("Segoe UI", 9.2f, FontStyle.Bold))
-            using (var white = new SolidBrush(Color.FromArgb(235, 238, 242)))
-                g.DrawString(T("ログイン", "Login"), f, white, x + 14, y + 5);
+                TextRenderer.DrawText(g, T("ログイン", "Login"), f,
+                    new Rectangle(x, y, buttonW, buttonH),
+                    Color.FromArgb(235, 238, 242),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
         void DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
@@ -1490,21 +1507,22 @@ namespace Headroom
             }
         }
 
-        void ShowSettingsDialog()
+        async Task ShowSettingsDialog()
         {
             string prevLayout     = settings.LayoutMode;
             bool   prevShowCodex  = settings.ShowCodex;
             bool   prevShowClaude = settings.ShowClaude;
 
-            using (var dlg = new SettingsForm(settings, () =>
+            using (var dlg = new SettingsForm(
+                settings,
+                () => { ApplyLayoutMinimumSize(); ApplyIdealSize(); TopMost = settings.AlwaysOnTop; Invalidate(); },
+                () => claude.Data.Status != "login_required",
+                () => codex.Data.Status != "login_required",
+                async () => await LogoutServiceAsync(claude),
+                async () => await LogoutServiceAsync(codex)))
             {
-                ApplyLayoutMinimumSize();
-                ApplyIdealSize();
-                TopMost = settings.AlwaysOnTop;
-                Invalidate();
-            }))
-            {
-                if (dlg.ShowDialog(this) == DialogResult.OK)
+                dlg.ShowDialog(this);
+                if (dlg.DialogResult == DialogResult.OK)
                 {
                     bool layoutChanged = settings.LayoutMode    != prevLayout     ||
                                         settings.ShowCodex      != prevShowCodex  ||
@@ -1514,6 +1532,8 @@ namespace Headroom
                     TopMost = settings.AlwaysOnTop;
                     settings.Save();
                 }
+                if (dlg.LoginClaude) await OpenLoginAsync(claude);
+                if (dlg.LoginCodex)  await OpenLoginAsync(codex);
             }
             hoverKey = "";
             Invalidate();
@@ -1584,11 +1604,24 @@ namespace Headroom
         readonly DarkTextBox warningPercent = new DarkTextBox();
         readonly DarkTextBox criticalPercent = new DarkTextBox();
 
-        public SettingsForm(WidgetSettings settings, Action preview)
+        Func<bool> claudeLoggedIn;
+        Func<bool> codexLoggedIn;
+        Func<Task> logoutClaude;
+        Func<Task> logoutCodex;
+        public bool LoginClaude { get; private set; }
+        public bool LoginCodex  { get; private set; }
+
+        public SettingsForm(WidgetSettings settings, Action preview,
+            Func<bool> claudeLoggedIn, Func<bool> codexLoggedIn,
+            Func<Task> logoutClaude, Func<Task> logoutCodex)
         {
             this.settings = settings;
             this.original = settings.Clone();
             this.preview = preview;
+            this.claudeLoggedIn = claudeLoggedIn;
+            this.codexLoggedIn  = codexLoggedIn;
+            this.logoutClaude   = logoutClaude;
+            this.logoutCodex    = logoutCodex;
             Text = T("設定", "Settings");
             Width = 880;
             Height = Math.Min(640, Screen.PrimaryScreen.WorkingArea.Height - 80);
@@ -1663,6 +1696,9 @@ namespace Headroom
             SetupCombo(showClaude, settings.ShowClaude ? "enabled" : "disabled", new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             AddRow(leftCard, "Codex 表示", "Codex display", "", "", showCodex,  ref leftY);
             AddRow(leftCard, "Claude 表示", "Claude display", "", "", showClaude, ref leftY);
+            AddSection(leftCard, "アカウント", "Account", ref leftY);
+            AddAccountRow(leftCard, "Claude", claudeLoggedIn(), logoutClaude, ref leftY, true);
+            AddAccountRow(leftCard, "Codex",  codexLoggedIn(),  logoutCodex,  ref leftY, false);
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
             AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
             AddRow(leftCard, "Codex トークン表示", "Codex token display", "残量 / 使用量", "remaining / used", codexMode, ref leftY);
@@ -1807,6 +1843,88 @@ namespace Headroom
                 if (pt.Y >= 0 && pt.Y < 56 && pt.X < Width - 225)
                     m.Result = (IntPtr)HTCAPTION;
             }
+        }
+
+        void AddAccountRow(Panel parent, string serviceName, bool loggedIn, Func<Task> logout, ref int y, bool isClaude)
+        {
+            int rowH = 50;
+            bool awaitingConfirm = false;
+            System.Windows.Forms.Timer confirmTimer = null;
+
+            Color signedInColor  = Color.FromArgb(140, 210, 160);
+            Color signedOutColor = Color.FromArgb(160, 140, 120);
+            var statusLabel = new Label
+            {
+                Text = T(serviceName + "：" + (loggedIn ? "ログイン中" : "未ログイン"),
+                         serviceName + ": " + (loggedIn ? "Signed in" : "Not signed in")),
+                Location = new Point(24, y + 15),
+                Width = 220, Height = 20,
+                Font = new Font("Yu Gothic UI", 9.2f),
+                ForeColor = loggedIn ? signedInColor : signedOutColor
+            };
+            parent.Controls.Add(statusLabel);
+
+            var btn = new RoundButton
+            {
+                Text = loggedIn ? T("ログアウト", "Logout") : T("ログイン", "Login"),
+                CornerRadius = 0, Width = 110, Height = 30,
+                FillColor        = loggedIn ? Color.FromArgb(44, 44, 52) : Color.FromArgb(45, 132, 235),
+                ForeColor        = loggedIn ? Color.FromArgb(200, 206, 218) : Color.White,
+                Font             = new Font("Yu Gothic UI", 9.5f),
+                HoverBackColor   = loggedIn ? Color.FromArgb(56, 56, 66) : Color.FromArgb(62, 148, 250),
+                PressedBackColor = loggedIn ? Color.FromArgb(30, 30, 38) : Color.FromArgb(32, 110, 210)
+            };
+            btn.Location = new Point(parent.Width - 134, y + 10);
+            parent.Controls.Add(btn);
+
+            var line = new Panel { Location = new Point(24, y + rowH - 1), Width = parent.Width - 48, Height = 1, BackColor = Color.FromArgb(42, 42, 52) };
+            parent.Controls.Add(line);
+            y += rowH;
+
+            btn.Click += async (s, e) =>
+            {
+                if (!loggedIn)
+                {
+                    if (isClaude) LoginClaude = true; else LoginCodex = true;
+                    Close();
+                    return;
+                }
+                if (!awaitingConfirm)
+                {
+                    awaitingConfirm = true;
+                    btn.Text = T("もう一度押して", "Confirm logout");
+                    btn.FillColor = Color.FromArgb(140, 45, 45);
+                    btn.HoverBackColor = Color.FromArgb(165, 60, 60);
+                    btn.Invalidate();
+                    if (confirmTimer != null) confirmTimer.Stop();
+                    confirmTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+                    confirmTimer.Tick += (t, te) =>
+                    {
+                        if (confirmTimer != null) confirmTimer.Stop();
+                        if (!awaitingConfirm) return;
+                        awaitingConfirm = false;
+                        btn.Text = T("ログアウト", "Logout");
+                        btn.FillColor      = Color.FromArgb(44, 44, 52);
+                        btn.HoverBackColor = Color.FromArgb(56, 56, 66);
+                        btn.Invalidate();
+                    };
+                    confirmTimer.Start();
+                }
+                else
+                {
+                    if (confirmTimer != null) confirmTimer.Stop();
+                    awaitingConfirm = false;
+                    loggedIn = false;
+                    statusLabel.Text = T(serviceName + "：未ログイン", serviceName + ": Not signed in");
+                    statusLabel.ForeColor = signedOutColor;
+                    btn.Text = T("ログイン", "Login");
+                    btn.FillColor        = Color.FromArgb(45, 132, 235);
+                    btn.HoverBackColor   = Color.FromArgb(62, 148, 250);
+                    btn.ForeColor        = Color.White;
+                    btn.Invalidate();
+                    await logout();
+                }
+            };
         }
 
         void AddSection(Panel parent, string ja, string en, ref int y)
