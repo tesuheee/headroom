@@ -1434,8 +1434,8 @@ namespace AiUsageWebView2
             AddRow(leftCard, "Codex", "Codex", "", "", showCodex,  ref leftY);
             AddRow(leftCard, "Claude", "Claude", "", "", showClaude, ref leftY);
             AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
-            AddRow(leftCard, "Codex の値", "Codex value", "", "", codexMode, ref leftY);
-            AddRow(leftCard, "Claude の値", "Claude value", "", "", claudeMode, ref leftY);
+            AddRow(leftCard, "Codex", "Codex", "残量 / 使用量 のどちらを表示するか", "which value to display", codexMode, ref leftY);
+            AddRow(leftCard, "Claude", "Claude", "残量 / 使用量 のどちらを表示するか", "which value to display", claudeMode, ref leftY);
             AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
             AddRow(leftCard, "週リセット表示", "Weekly reset display", "", "", weeklyResetMode, ref leftY);
 
@@ -1466,6 +1466,11 @@ namespace AiUsageWebView2
             vDivider.Height = contentH;
             scrollContainer.SetContentHeight(contentH);
             scrollContainer.AttachWheelToChildren();
+
+            // ウィンドウ高をコンテンツに合わせて隙間をなくす
+            int idealFormH = Math.Min(Screen.PrimaryScreen.WorkingArea.Height - 80, contentH + 57);
+            Height = idealFormH;
+            scrollContainer.Size = new Size(Width, Height - 57);
 
             AcceptButton = ok;
             CancelButton = cancel;
