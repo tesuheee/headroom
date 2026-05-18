@@ -59,7 +59,7 @@ namespace AiUsageWebView2
             Text = "AI Usage";
             Width = settings.Width;
             Height = settings.Height;
-            MinimumSize = new Size(640, 136);
+            ApplyLayoutMinimumSize();
             FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.Black;
             TransparencyKey = Color.Black;
@@ -130,8 +130,8 @@ namespace AiUsageWebView2
 
         async Task RunScheduledRefreshAsync()
         {
-            await MaybeRefreshAsync(codex, codexView);
-            await MaybeRefreshAsync(claude, claudeView);
+            if (settings.ShowCodex) await MaybeRefreshAsync(codex, codexView);
+            if (settings.ShowClaude) await MaybeRefreshAsync(claude, claudeView);
         }
 
         async Task MaybeRefreshAsync(ServiceState service, WebView2 view)
@@ -158,9 +158,10 @@ namespace AiUsageWebView2
 
         async Task RefreshAllAsync(bool manual)
         {
-            await Task.WhenAll(
-                RefreshServiceAsync(codex, codexView, manual),
-                RefreshServiceAsync(claude, claudeView, manual));
+            var tasks = new List<Task>();
+            if (settings.ShowCodex) tasks.Add(RefreshServiceAsync(codex, codexView, manual));
+            if (settings.ShowClaude) tasks.Add(RefreshServiceAsync(claude, claudeView, manual));
+            await Task.WhenAll(tasks);
         }
 
         async Task RefreshServiceAsync(ServiceState service, WebView2 view, bool manual)
@@ -584,12 +585,46 @@ namespace AiUsageWebView2
             int y = 8;
             int gap = 10;
             int sideRail = 16;
-            int cardW = Math.Max(240, (ClientSize.Width - sideRail - 26 - gap) / 2);
-            int cardH = ClientSize.Height - y - 8;
-            DrawService(g, codex, 10, y, cardW, cardH, "codex");
-            DrawService(g, claude, 20 + cardW, y, cardW, cardH, "claude");
+            var visible = VisibleServices();
+            int railLeft = ClientSize.Width - sideRail - 18;
+            int contentW = Math.Max(240, railLeft - 10);
+            int contentH = Math.Max(110, ClientSize.Height - y - 8);
+            if (visible.Count == 1)
+            {
+                DrawService(g, visible[0].Item1, 10, y, contentW, contentH, visible[0].Item2);
+            }
+            else if (string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase))
+            {
+                int cardH = Math.Max(110, (contentH - gap) / 2);
+                DrawService(g, visible[0].Item1, 10, y, contentW, cardH, visible[0].Item2);
+                DrawService(g, visible[1].Item1, 10, y + cardH + gap, contentW, cardH, visible[1].Item2);
+            }
+            else
+            {
+                int cardW = Math.Max(240, (contentW - gap) / 2);
+                DrawService(g, visible[0].Item1, 10, y, cardW, contentH, visible[0].Item2);
+                DrawService(g, visible[1].Item1, 10 + cardW + gap, y, cardW, contentH, visible[1].Item2);
+            }
             DrawSideRail(g);
             DrawResizeGrip(g);
+        }
+
+        List<Tuple<ServiceState, string>> VisibleServices()
+        {
+            var items = new List<Tuple<ServiceState, string>>();
+            if (settings.ShowCodex) items.Add(Tuple.Create(codex, "codex"));
+            if (settings.ShowClaude) items.Add(Tuple.Create(claude, "claude"));
+            if (items.Count == 0) items.Add(Tuple.Create(claude, "claude"));
+            return items;
+        }
+
+        void ApplyLayoutMinimumSize()
+        {
+            bool vertical = string.Equals(settings.LayoutMode, "vertical", StringComparison.OrdinalIgnoreCase);
+            bool twoServices = settings.ShowClaude && settings.ShowCodex;
+            MinimumSize = vertical && twoServices ? new Size(360, 270) : new Size(640, 136);
+            if (Width < MinimumSize.Width) Width = MinimumSize.Width;
+            if (Height < MinimumSize.Height) Height = MinimumSize.Height;
         }
 
         void DrawSideRail(Graphics g)
@@ -614,10 +649,11 @@ namespace AiUsageWebView2
             var r = new Rectangle(x - 1, y - 1, 20, 20);
             if (hoverKey == key)
             {
-                using (var bg = new SolidBrush(Color.FromArgb(50, 50, 54)))
+                Color hoverBg = key == "close" ? Color.FromArgb(190, 58, 58) : Color.FromArgb(50, 50, 54);
+                using (var bg = new SolidBrush(hoverBg))
                 using (var path = RoundRect(r.X - 4, r.Y - 4, r.Width + 8, r.Height + 8, 12))
                     g.FillPath(bg, path);
-                color = Color.FromArgb(Math.Min(255, color.R + 40), Math.Min(255, color.G + 40), Math.Min(255, color.B + 40));
+                color = key == "close" ? Color.White : Color.FromArgb(Math.Min(255, color.R + 40), Math.Min(255, color.G + 40), Math.Min(255, color.B + 40));
             }
             painter(g, r, color);
         }
@@ -1173,12 +1209,14 @@ namespace AiUsageWebView2
         {
             using (var dlg = new SettingsForm(settings, () =>
             {
+                ApplyLayoutMinimumSize();
                 TopMost = settings.AlwaysOnTop;
                 Invalidate();
             }))
             {
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
+                    ApplyLayoutMinimumSize();
                     TopMost = settings.AlwaysOnTop;
                     settings.Save();
                     Invalidate();
@@ -1211,17 +1249,26 @@ namespace AiUsageWebView2
         readonly WidgetSettings settings;
         readonly WidgetSettings original;
         readonly Action preview;
-        readonly ComboBox language = new ComboBox();
+        readonly RadioButton languageJa = new RadioButton();
+        readonly RadioButton languageEn = new RadioButton();
         readonly NumericUpDown normal = new NumericUpDown();
         readonly NumericUpDown boostDuration = new NumericUpDown();
         readonly NumericUpDown boostInterval = new NumericUpDown();
         readonly NumericUpDown finalWindow = new NumericUpDown();
         readonly NumericUpDown finalInterval = new NumericUpDown();
         readonly CheckBox topMost = new CheckBox();
-        readonly ComboBox codexMode = new ComboBox();
-        readonly ComboBox claudeMode = new ComboBox();
-        readonly ComboBox fiveResetMode = new ComboBox();
-        readonly ComboBox weeklyResetMode = new ComboBox();
+        readonly CheckBox showCodex = new CheckBox();
+        readonly CheckBox showClaude = new CheckBox();
+        readonly RadioButton layoutHorizontal = new RadioButton();
+        readonly RadioButton layoutVertical = new RadioButton();
+        readonly RadioButton codexRemaining = new RadioButton();
+        readonly RadioButton codexUsed = new RadioButton();
+        readonly RadioButton claudeRemaining = new RadioButton();
+        readonly RadioButton claudeUsed = new RadioButton();
+        readonly RadioButton fiveResetRelative = new RadioButton();
+        readonly RadioButton fiveResetTime = new RadioButton();
+        readonly RadioButton weeklyResetRelative = new RadioButton();
+        readonly RadioButton weeklyResetTime = new RadioButton();
         readonly NumericUpDown labelSize = new NumericUpDown();
         readonly NumericUpDown percentSize = new NumericUpDown();
         readonly NumericUpDown resetSize = new NumericUpDown();
@@ -1237,7 +1284,7 @@ namespace AiUsageWebView2
             this.preview = preview;
             Text = T("設定", "Settings");
             Width = 880;
-            Height = 560;
+            Height = 620;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
@@ -1259,12 +1306,16 @@ namespace AiUsageWebView2
             AddNumber(T("直前更新開始（分）", "Final window (min)"), finalWindow, settings.FinalRefreshWindowMinutes, colL, startY + 22 + row * 3, 1, 120);
             AddNumber(T("直前更新間隔（分）", "Final interval (min)"), finalInterval, settings.FinalRefreshIntervalMinutes, colL, startY + 22 + row * 4, 1, 30);
 
-            AddSectionLabel(T("一般", "General"), colL, startY + 22 + row * 5 + 14);
-            AddLanguage(T("言語", "Language"), language, settings.Language, colL, startY + 22 + row * 5 + 38);
+            AddSectionLabel(T("表示対象", "Services"), colL, startY + 22 + row * 5 + 14);
+            AddToggle(T("Codexを表示", "Show Codex"), showCodex, settings.ShowCodex, colL, startY + 22 + row * 5 + 42);
+            AddToggle(T("Claudeを表示", "Show Claude"), showClaude, settings.ShowClaude, colL + 150, startY + 22 + row * 5 + 42);
+
+            AddSectionLabel(T("一般", "General"), colL, startY + 22 + row * 6 + 22);
+            AddSegment(T("言語", "Language"), languageJa, languageEn, "日本語", "English", settings.Language, "ja", "en", colL, startY + 22 + row * 6 + 46);
 
             topMost.Text = T("常に最前面に固定", "Always on top");
             topMost.Checked = settings.AlwaysOnTop;
-            topMost.Location = new Point(colL + 4, startY + 22 + row * 5 + 36 + row);
+            topMost.Location = new Point(colL + 4, startY + 22 + row * 6 + 46 + row);
             topMost.Width = 240;
             topMost.FlatStyle = FlatStyle.Flat;
             topMost.ForeColor = Color.FromArgb(210, 214, 222);
@@ -1272,17 +1323,18 @@ namespace AiUsageWebView2
 
             // Right column: Display
             AddSectionLabel(T("表示設定", "Display"), colR, startY - 2);
-            AddMode("Codex " + T("表示", "display"), codexMode, settings.CodexShowUsed, colR, startY + 22);
-            AddMode("Claude " + T("表示", "display"), claudeMode, settings.ClaudeShowUsed, colR, startY + 22 + row);
-            AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), colR, startY + 22 + row * 2, 6, 32);
-            AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), colR, startY + 22 + row * 3, 8, 42);
-            AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), colR, startY + 22 + row * 4, 6, 32);
-            AddResetMode(T("5時間リセット", "5h reset"), fiveResetMode, settings.FiveHourResetMode, colR, startY + 22 + row * 5);
-            AddResetMode(T("週リセット", "Weekly reset"), weeklyResetMode, settings.WeeklyResetMode, colR, startY + 22 + row * 6);
+            AddSegment(T("配置", "Layout"), layoutHorizontal, layoutVertical, T("横", "Wide"), T("縦", "Tall"), settings.LayoutMode, "horizontal", "vertical", colR, startY + 22);
+            AddSegment("Codex " + T("表示", "display"), codexRemaining, codexUsed, T("残量", "Left"), T("使用量", "Used"), settings.CodexShowUsed ? "used" : "remaining", "remaining", "used", colR, startY + 22 + row);
+            AddSegment("Claude " + T("表示", "display"), claudeRemaining, claudeUsed, T("残量", "Left"), T("使用量", "Used"), settings.ClaudeShowUsed ? "used" : "remaining", "remaining", "used", colR, startY + 22 + row * 2);
+            AddNumber(T("ラベル文字", "Label text"), labelSize, (int)Math.Round(settings.LabelFontSize), colR, startY + 22 + row * 3, 6, 32);
+            AddNumber(T("パーセント文字", "Percent text"), percentSize, (int)Math.Round(settings.PercentFontSize), colR, startY + 22 + row * 4, 8, 42);
+            AddNumber(T("リセット文字", "Reset text"), resetSize, (int)Math.Round(settings.ResetFontSize), colR, startY + 22 + row * 5, 6, 32);
+            AddSegment(T("5時間リセット", "5h reset"), fiveResetRelative, fiveResetTime, T("残り時間", "Time left"), T("時刻", "Clock"), settings.FiveHourResetMode, "relative", "time", colR, startY + 22 + row * 6);
+            AddSegment(T("週リセット", "Weekly reset"), weeklyResetRelative, weeklyResetTime, T("残り時間", "Time left"), T("時刻", "Clock"), settings.WeeklyResetMode, "relative", "time", colR, startY + 22 + row * 7);
 
-            AddSectionLabel(T("しきい値", "Thresholds"), colR, startY + 22 + row * 7 + 14);
-            AddNumberWithColor(T("黄色（残量%）", "Yellow (left %)"), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, colR, startY + 22 + row * 7 + 38, 1, 99);
-            AddNumberWithColor(T("赤（残量%）", "Red (left %)"), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, colR, startY + 22 + row * 7 + 38 + row, 1, 99);
+            AddSectionLabel(T("しきい値", "Thresholds"), colR, startY + 22 + row * 8 + 14);
+            AddNumberWithColor(T("黄色（残量%）", "Yellow (left %)"), warningPercent, settings.WarningRemainingPercent, warningColor, settings.WarningColor, colR, startY + 22 + row * 8 + 38, 1, 99);
+            AddNumberWithColor(T("赤（残量%）", "Red (left %)"), criticalPercent, settings.CriticalRemainingPercent, criticalColor, settings.CriticalColor, colR, startY + 22 + row * 8 + 38 + row, 1, 99);
 
             // Bottom buttons
             int btnY = Height - 78;
@@ -1369,53 +1421,58 @@ namespace AiUsageWebView2
             Controls.Add(box);
         }
 
-        void StyleComboBox(ComboBox box)
+        void AddToggle(string text, CheckBox box, bool value, int x, int y)
         {
-            box.BackColor = Color.FromArgb(38, 38, 44);
-            box.ForeColor = Color.FromArgb(230, 232, 238);
+            box.Text = text;
+            box.Checked = value;
+            box.Location = new Point(x, y);
+            box.Width = 136;
+            box.Height = 30;
+            box.Appearance = Appearance.Button;
             box.FlatStyle = FlatStyle.Flat;
-        }
-
-        void AddMode(string text, ComboBox box, bool showUsed, int x, int y)
-        {
-            var label = new Label { Text = text, Location = new Point(x, y + 3), Width = 220, ForeColor = Color.FromArgb(210, 214, 222) };
-            box.DropDownStyle = ComboBoxStyle.DropDownList;
-            box.Items.Add(T("残量表示", "Remaining"));
-            box.Items.Add(T("使用量表示", "Used"));
-            box.SelectedIndex = showUsed ? 1 : 0;
-            box.Location = new Point(x + 224, y);
-            box.Width = 120;
-            StyleComboBox(box);
-            Controls.Add(label);
+            box.TextAlign = ContentAlignment.MiddleCenter;
+            box.BackColor = value ? Color.FromArgb(45, 95, 180) : Color.FromArgb(38, 38, 44);
+            box.ForeColor = Color.FromArgb(230, 232, 238);
+            box.FlatAppearance.BorderColor = value ? Color.FromArgb(70, 130, 220) : Color.FromArgb(62, 62, 70);
+            box.CheckedChanged += (s, e) => StyleToggle(box);
             Controls.Add(box);
         }
 
-        void AddResetMode(string text, ComboBox box, string mode, int x, int y)
+        void StyleToggle(CheckBox box)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 3), Width = 220, ForeColor = Color.FromArgb(210, 214, 222) };
-            box.DropDownStyle = ComboBoxStyle.DropDownList;
-            box.Items.Add(T("残り時間", "Remaining time"));
-            box.Items.Add(T("リセット時刻", "Reset time"));
-            box.SelectedIndex = string.Equals(mode, "time", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            box.Location = new Point(x + 224, y);
-            box.Width = 120;
-            StyleComboBox(box);
-            Controls.Add(label);
-            Controls.Add(box);
+            box.BackColor = box.Checked ? Color.FromArgb(45, 95, 180) : Color.FromArgb(38, 38, 44);
+            box.FlatAppearance.BorderColor = box.Checked ? Color.FromArgb(70, 130, 220) : Color.FromArgb(62, 62, 70);
         }
 
-        void AddLanguage(string text, ComboBox box, string value, int x, int y)
+        void AddSegment(string text, RadioButton left, RadioButton right, string leftText, string rightText, string value, string leftValue, string rightValue, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 3), Width = 220, ForeColor = Color.FromArgb(210, 214, 222) };
-            box.DropDownStyle = ComboBoxStyle.DropDownList;
-            box.Items.Add("日本語");
-            box.Items.Add("English");
-            box.SelectedIndex = string.Equals(value, "en", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            box.Location = new Point(x + 224, y);
-            box.Width = 120;
-            StyleComboBox(box);
+            var label = new Label { Text = text, Location = new Point(x, y + 4), Width = 180, ForeColor = Color.FromArgb(210, 214, 222) };
             Controls.Add(label);
-            Controls.Add(box);
+            var panel = new Panel { Location = new Point(x + 184, y), Width = 166, Height = 31, BackColor = BackColor };
+            Controls.Add(panel);
+            left.Text = leftText;
+            right.Text = rightText;
+            left.Checked = string.Equals(value, leftValue, StringComparison.OrdinalIgnoreCase);
+            right.Checked = !left.Checked;
+            StyleSegmentButton(left, 0, 0, 82);
+            StyleSegmentButton(right, 82, 0, 82);
+            left.CheckedChanged += (s, e) => { StyleSegmentButton(left, left.Location.X, left.Location.Y, left.Width); StyleSegmentButton(right, right.Location.X, right.Location.Y, right.Width); };
+            right.CheckedChanged += (s, e) => { StyleSegmentButton(left, left.Location.X, left.Location.Y, left.Width); StyleSegmentButton(right, right.Location.X, right.Location.Y, right.Width); };
+            panel.Controls.Add(left);
+            panel.Controls.Add(right);
+        }
+
+        void StyleSegmentButton(RadioButton button, int x, int y, int width)
+        {
+            button.Location = new Point(x, y);
+            button.Width = width;
+            button.Height = 30;
+            button.Appearance = Appearance.Button;
+            button.FlatStyle = FlatStyle.Flat;
+            button.TextAlign = ContentAlignment.MiddleCenter;
+            button.BackColor = button.Checked ? Color.FromArgb(55, 110, 200) : Color.FromArgb(38, 38, 44);
+            button.ForeColor = button.Checked ? Color.White : Color.FromArgb(205, 210, 220);
+            button.FlatAppearance.BorderColor = button.Checked ? Color.FromArgb(80, 145, 235) : Color.FromArgb(62, 62, 70);
         }
 
         void WireLivePreview()
@@ -1426,15 +1483,24 @@ namespace AiUsageWebView2
                 preview();
             };
             normal.ValueChanged += apply;
-            language.SelectedIndexChanged += apply;
+            languageJa.CheckedChanged += apply;
+            languageEn.CheckedChanged += apply;
             boostDuration.ValueChanged += apply;
             boostInterval.ValueChanged += apply;
             finalWindow.ValueChanged += apply;
             finalInterval.ValueChanged += apply;
-            codexMode.SelectedIndexChanged += apply;
-            claudeMode.SelectedIndexChanged += apply;
-            fiveResetMode.SelectedIndexChanged += apply;
-            weeklyResetMode.SelectedIndexChanged += apply;
+            showCodex.CheckedChanged += apply;
+            showClaude.CheckedChanged += apply;
+            layoutHorizontal.CheckedChanged += apply;
+            layoutVertical.CheckedChanged += apply;
+            codexRemaining.CheckedChanged += apply;
+            codexUsed.CheckedChanged += apply;
+            claudeRemaining.CheckedChanged += apply;
+            claudeUsed.CheckedChanged += apply;
+            fiveResetRelative.CheckedChanged += apply;
+            fiveResetTime.CheckedChanged += apply;
+            weeklyResetRelative.CheckedChanged += apply;
+            weeklyResetTime.CheckedChanged += apply;
             labelSize.ValueChanged += apply;
             percentSize.ValueChanged += apply;
             resetSize.ValueChanged += apply;
@@ -1448,15 +1514,19 @@ namespace AiUsageWebView2
         void ApplyToSettings()
         {
             settings.NormalIntervalMinutes = (int)normal.Value;
-            settings.Language = language.SelectedIndex == 1 ? "en" : "ja";
+            settings.Language = languageEn.Checked ? "en" : "ja";
             settings.BoostDurationMinutes = (int)boostDuration.Value;
             settings.BoostIntervalMinutes = (int)boostInterval.Value;
             settings.FinalRefreshWindowMinutes = (int)finalWindow.Value;
             settings.FinalRefreshIntervalMinutes = (int)finalInterval.Value;
-            settings.CodexShowUsed = codexMode.SelectedIndex == 1;
-            settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
-            settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "time" : "relative";
-            settings.WeeklyResetMode = weeklyResetMode.SelectedIndex == 1 ? "time" : "relative";
+            if (!showCodex.Checked && !showClaude.Checked) showClaude.Checked = true;
+            settings.ShowCodex = showCodex.Checked;
+            settings.ShowClaude = showClaude.Checked;
+            settings.LayoutMode = layoutVertical.Checked ? "vertical" : "horizontal";
+            settings.CodexShowUsed = codexUsed.Checked;
+            settings.ClaudeShowUsed = claudeUsed.Checked;
+            settings.FiveHourResetMode = fiveResetTime.Checked ? "time" : "relative";
+            settings.WeeklyResetMode = weeklyResetTime.Checked ? "time" : "relative";
             settings.LabelFontSize = (float)labelSize.Value;
             settings.PercentFontSize = (float)percentSize.Value;
             settings.ResetFontSize = (float)resetSize.Value;
@@ -1577,16 +1647,19 @@ namespace AiUsageWebView2
         public int Width = 760;
         public int Height = 170;
         public string Language = "ja";
-        public int NormalIntervalMinutes = 5;
+        public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
         public int FinalRefreshWindowMinutes = 15;
         public int FinalRefreshIntervalMinutes = 1;
         public bool AlwaysOnTop = true;
+        public bool ShowCodex = true;
+        public bool ShowClaude = true;
+        public string LayoutMode = "horizontal";
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
-        public string FiveHourResetMode = "relative";
-        public string WeeklyResetMode = "relative";
+        public string FiveHourResetMode = "time";
+        public string WeeklyResetMode = "time";
         public float LabelFontSize = 10.8f;
         public float PercentFontSize = 16.5f;
         public float ResetFontSize = 9.9f;
@@ -1620,6 +1693,9 @@ namespace AiUsageWebView2
                 s.FinalRefreshWindowMinutes = ReadInt(json, "finalRefreshWindowMinutes", s.FinalRefreshWindowMinutes);
                 s.FinalRefreshIntervalMinutes = ReadInt(json, "finalRefreshIntervalMinutes", s.FinalRefreshIntervalMinutes);
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
+                s.ShowCodex = ReadBool(json, "showCodex", s.ShowCodex);
+                s.ShowClaude = ReadBool(json, "showClaude", s.ShowClaude);
+                s.LayoutMode = NormalizeLayoutMode(ReadString(json, "layoutMode", s.LayoutMode));
                 s.CodexShowUsed = ReadBool(json, "codexShowUsed", s.CodexShowUsed);
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
                 s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
@@ -1654,6 +1730,9 @@ namespace AiUsageWebView2
             FinalRefreshWindowMinutes = other.FinalRefreshWindowMinutes;
             FinalRefreshIntervalMinutes = other.FinalRefreshIntervalMinutes;
             AlwaysOnTop = other.AlwaysOnTop;
+            ShowCodex = other.ShowCodex;
+            ShowClaude = other.ShowClaude;
+            LayoutMode = other.LayoutMode;
             CodexShowUsed = other.CodexShowUsed;
             ClaudeShowUsed = other.ClaudeShowUsed;
             FiveHourResetMode = other.FiveHourResetMode;
@@ -1683,6 +1762,9 @@ namespace AiUsageWebView2
                     "  \"finalRefreshWindowMinutes\": " + FinalRefreshWindowMinutes + ",\r\n" +
                     "  \"finalRefreshIntervalMinutes\": " + FinalRefreshIntervalMinutes + ",\r\n" +
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
+                    "  \"showCodex\": " + (ShowCodex ? "true" : "false") + ",\r\n" +
+                    "  \"showClaude\": " + (ShowClaude ? "true" : "false") + ",\r\n" +
+                    "  \"layoutMode\": \"" + Escape(LayoutMode) + "\",\r\n" +
                     "  \"codexShowUsed\": " + (CodexShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
@@ -1748,6 +1830,11 @@ namespace AiUsageWebView2
         static string NormalizeResetMode(string value)
         {
             return string.Equals(value, "time", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
+        }
+
+        static string NormalizeLayoutMode(string value)
+        {
+            return string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
         }
 
         static string FormatFloat(float value)

@@ -56,5 +56,6 @@ if ($LASTEXITCODE -ne 0) {
 $ZipName = if ($Version) { "AiUsageWebView2-v$Version.zip" } else { "AiUsageWebView2.zip" }
 $ZipPath = Join-Path $PSScriptRoot $ZipName
 if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Compress-Archive -Path (Get-ChildItem $Out).FullName -DestinationPath $ZipPath
+$PackageFiles = Get-ChildItem $Out -File | Where-Object { $_.Name -ne "settings.json" }
+Compress-Archive -Path $PackageFiles.FullName -DestinationPath $ZipPath
 "Packaged: $ZipPath"
