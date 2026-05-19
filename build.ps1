@@ -2,36 +2,11 @@ param([string]$Version = "")
 
 $ErrorActionPreference = "Stop"
 
-$PackageRoot = Join-Path $PSScriptRoot "packages"
-$Pkg = Join-Path $PackageRoot "Microsoft.Web.WebView2.1.0.3537.50"
 $Out = Join-Path $PSScriptRoot "bin"
 $Csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-
-$WinForms = Join-Path $Pkg "lib\net462\Microsoft.Web.WebView2.WinForms.dll"
-$Core = Join-Path $Pkg "lib\net462\Microsoft.Web.WebView2.Core.dll"
-$Loader = Join-Path $Pkg "runtimes\win-x64\native\WebView2Loader.dll"
 $Icon = Join-Path $PSScriptRoot "app.ico"
 
-if (-not (Test-Path $WinForms) -or -not (Test-Path $Core) -or -not (Test-Path $Loader)) {
-  New-Item -ItemType Directory -Force -Path $PackageRoot | Out-Null
-  $Nupkg = Join-Path $PackageRoot "Microsoft.Web.WebView2.1.0.3537.50.nupkg"
-  if (-not (Test-Path $Nupkg)) {
-    Invoke-WebRequest -UseBasicParsing -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.3537.50" -OutFile $Nupkg
-  }
-  $Zip = Join-Path $PackageRoot "Microsoft.Web.WebView2.1.0.3537.50.zip"
-  Copy-Item $Nupkg $Zip -Force
-  Expand-Archive -Path $Zip -DestinationPath $Pkg -Force
-}
-
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
-
-$OutWinForms = Join-Path $Out (Split-Path $WinForms -Leaf)
-$OutCore = Join-Path $Out (Split-Path $Core -Leaf)
-$OutLoader = Join-Path $Out (Split-Path $Loader -Leaf)
-
-Copy-Item $WinForms $OutWinForms -Force
-Copy-Item $Core $OutCore -Force
-Copy-Item $Loader $OutLoader -Force
 
 $Exe = Join-Path $Out "Headroom.exe"
 $Source = Join-Path $PSScriptRoot "Program.cs"
@@ -45,8 +20,7 @@ $CscArgs = @(
   "/reference:System.Core.dll",
   "/reference:System.Drawing.dll",
   "/reference:System.Windows.Forms.dll",
-  "/reference:$WinForms",
-  "/reference:$Core",
+  "/reference:System.Net.Http.dll",
   $Source
 )
 
@@ -75,7 +49,6 @@ if ($Version) {
     New-Item -ItemType Directory -Force -Path $ReleaseOut | Out-Null
     $ZipPath = Join-Path $ReleaseOut "Headroom-v$Version.zip"
     if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-    $PackageFiles = @($Exe, $OutWinForms, $OutCore, $OutLoader)
-    Compress-Archive -Path $PackageFiles -DestinationPath $ZipPath
+    Compress-Archive -Path $Exe -DestinationPath $ZipPath
     "Packaged: $ZipPath"
 }

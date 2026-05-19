@@ -1,10 +1,12 @@
-using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.WinForms;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -37,8 +39,6 @@ namespace Headroom
 
         readonly Timer paintTimer = new Timer();
         readonly Timer schedulerTimer = new Timer();
-        readonly WebView2 claudeView = new WebView2();
-        readonly WebView2 codexView = new WebView2();
         readonly Dictionary<string, Rectangle> hits = new Dictionary<string, Rectangle>();
         readonly Dictionary<string, Rectangle> silentHits = new Dictionary<string, Rectangle>();
         string pendingSilentKey = "";
@@ -51,9 +51,19 @@ namespace Headroom
         string pendingTooltipText = "";
         Point pendingTooltipLocation;
 
-        CoreWebView2Environment webEnv;
+        static readonly HttpClient httpClient;
+        FileSystemWatcher claudeCredWatcher;
+        FileSystemWatcher codexCredWatcher;
+        DateTime lastClaudeCredNotify = DateTime.MinValue;
+        DateTime lastCodexCredNotify = DateTime.MinValue;
         ServiceState claude = new ServiceState("Claude", ClaudeUrl, Color.FromArgb(45, 132, 235));
         ServiceState codex = new ServiceState("Codex", CodexUrl, Color.FromArgb(26, 177, 92));
+
+        static UsageForm()
+        {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        }
         bool resizing;
         Point resizeStartPoint;
         Size resizeStartSize;
@@ -82,13 +92,7 @@ namespace Headroom
             KeyPreview = true;
             ShowInTaskbar = true;
 
-            foreach (var view in new[] { claudeView, codexView })
-            {
-                view.Size = new Size(1, 1);
-                view.Location = new Point(-20, -20);
-                view.Visible = false;
-                Controls.Add(view);
-            }
+            SetupCredentialWatchers();
 
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
@@ -145,66 +149,41 @@ namespace Headroom
 
             Shown += async (s, e) =>
             {
-                await InitializeWebViewsAsync();
                 await RefreshAllAsync(true);
             };
-        }
 
-        async Task InitializeWebViewsAsync()
-        {
-            if (webEnv != null) return;
-            string userData = WebViewUserDataPath();
-            Directory.CreateDirectory(userData);
-            webEnv = await CoreWebView2Environment.CreateAsync(null, userData);
-            await claudeView.EnsureCoreWebView2Async(webEnv);
-            await codexView.EnsureCoreWebView2Async(webEnv);
-        }
-
-        static string WebViewUserDataPath()
-        {
-            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string current = Path.Combine(local, "Headroom", "WebView2Profile");
-            string legacy = Path.Combine(local, "AiUsageWebView2", "WebView2Profile");
-            if (!Directory.Exists(current) && Directory.Exists(legacy))
+            FormClosed += (s, e) =>
             {
-                try { CopyDirectory(legacy, current); }
-                catch { }
-            }
-            return current;
-        }
-
-        static void CopyDirectory(string source, string destination)
-        {
-            Directory.CreateDirectory(destination);
-            foreach (string dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
-                Directory.CreateDirectory(Path.Combine(destination, dir.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
-            foreach (string file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
-            {
-                string relative = file.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string target = Path.Combine(destination, relative);
-                Directory.CreateDirectory(Path.GetDirectoryName(target));
-                File.Copy(file, target, false);
-            }
+                try { if (claudeCredWatcher != null) claudeCredWatcher.Dispose(); } catch { }
+                try { if (codexCredWatcher  != null) codexCredWatcher.Dispose();  } catch { }
+            };
         }
 
         async Task RunScheduledRefreshAsync()
         {
-            if (settings.ShowCodex) await MaybeRefreshAsync(codex, codexView);
-            if (settings.ShowClaude) await MaybeRefreshAsync(claude, claudeView);
+            bool anyNearReset =
+                (settings.ShowClaude && IsNearOrRecentReset(claude.Data)) ||
+                (settings.ShowCodex  && IsNearOrRecentReset(codex.Data));
+            schedulerTimer.Interval = anyNearReset ? 5000 : 10000;
+
+            if (settings.ShowCodex)  await MaybeRefreshAsync(codex);
+            if (settings.ShowClaude) await MaybeRefreshAsync(claude);
         }
 
-        async Task MaybeRefreshAsync(ServiceState service, WebView2 view)
+        async Task MaybeRefreshAsync(ServiceState service)
         {
             if (service.IsRefreshing) return;
             if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
                 service.BoostUntil = null;
 
-            int minutes = RefreshIntervalMinutes(service);
+            TimeSpan due;
             if (IsNearOrRecentReset(service.Data))
-                minutes = Math.Min(minutes, 1);
+                due = TimeSpan.FromSeconds(Math.Max(5, settings.NearResetIntervalSeconds));
+            else
+                due = TimeSpan.FromMinutes(Math.Max(1, RefreshIntervalMinutes(service)));
 
-            if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= TimeSpan.FromMinutes(Math.Max(1, minutes)))
-                await RefreshServiceAsync(service, view, false);
+            if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= due)
+                await RefreshServiceAsync(service, false);
         }
 
         static bool IsNearOrRecentReset(UsageData data)
@@ -268,30 +247,74 @@ namespace Headroom
         async Task RefreshAllAsync(bool manual)
         {
             var tasks = new List<Task>();
-            if (settings.ShowCodex) tasks.Add(RefreshServiceAsync(codex, codexView, manual));
-            if (settings.ShowClaude) tasks.Add(RefreshServiceAsync(claude, claudeView, manual));
+            if (settings.ShowCodex)  tasks.Add(RefreshCodexViaApiAsync(codex, manual));
+            if (settings.ShowClaude) tasks.Add(RefreshClaudeViaApiAsync(claude, manual));
             await Task.WhenAll(tasks);
         }
 
-        async Task RefreshServiceAsync(ServiceState service, WebView2 view, bool manual)
+        async Task RefreshServiceAsync(ServiceState service, bool manual)
+        {
+            if (service.Name == "Claude") await RefreshClaudeViaApiAsync(service, manual);
+            else                          await RefreshCodexViaApiAsync(service, manual);
+        }
+
+        async Task RefreshClaudeViaApiAsync(ServiceState service, bool manual)
         {
             if (service.IsRefreshing) return;
             service.IsRefreshing = true;
-            service.Status = manual ? "updating" : service.Status;
+            if (manual) service.Status = "updating";
             Invalidate();
             try
             {
-                await InitializeWebViewsAsync();
-                string text = await ScrapeAsync(view, service.Url);
-                service.Data = service.Name == "Claude" ? ParseClaude(text) : ParseCodex(text);
-                service.Status = service.Data.Status;
-                service.LastRefresh = DateTime.Now;
-                WriteDebug(service.Name.ToLowerInvariant() + "-webview2.txt", text);
+                string token;
+                long expiresAtMs;
+                if (!ReadClaudeCredentials(out token, out expiresAtMs))
+                {
+                    service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                    service.Status = "login_required";
+                    service.LastRefresh = DateTime.Now;
+                    return;
+                }
+                if (IsClaudeTokenExpired(expiresAtMs))
+                {
+                    service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                    service.Status = "login_required";
+                    service.LastRefresh = DateTime.Now;
+                    return;
+                }
+
+                using (var req = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage"))
+                {
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    req.Headers.Add("anthropic-beta", "oauth-2025-04-20");
+                    using (var resp = await httpClient.SendAsync(req))
+                    {
+                        int code = (int)resp.StatusCode;
+                        if (code == 401 || code == 403)
+                        {
+                            service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                            service.Status = "login_required";
+                            service.LastRefresh = DateTime.Now;
+                            return;
+                        }
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            service.Status = "fetch_error";
+                            WriteDebug("claude-api-error.txt", "HTTP " + code);
+                            return;
+                        }
+                        string json = await resp.Content.ReadAsStringAsync();
+                        WriteDebug("claude-api.txt", json);
+                        service.Data = ParseClaudeApi(json);
+                        service.Status = service.Data.Status;
+                        service.LastRefresh = DateTime.Now;
+                    }
+                }
             }
             catch (Exception ex)
             {
                 service.Status = "fetch_error";
-                WriteDebug(service.Name.ToLowerInvariant() + "-error.txt", ex.ToString());
+                WriteDebug("claude-api-error.txt", ex.ToString());
             }
             finally
             {
@@ -300,271 +323,330 @@ namespace Headroom
             }
         }
 
-        async Task OpenLoginAsync(ServiceState service)
+        async Task RefreshCodexViaApiAsync(ServiceState service, bool manual)
         {
-            await InitializeWebViewsAsync();
-            var login = new Form
+            if (service.IsRefreshing) return;
+            service.IsRefreshing = true;
+            if (manual) service.Status = "updating";
+            Invalidate();
+            try
             {
-                Text = service.Name + " Login",
-                Width = 980,
-                Height = 760,
-                StartPosition = FormStartPosition.CenterScreen,
-                TopMost = false
-            };
-            var view = new WebView2 { Dock = DockStyle.Fill };
-            login.Controls.Add(view);
-            login.Shown += async (s, e) =>
-            {
-                await view.EnsureCoreWebView2Async(webEnv);
-                view.CoreWebView2.NavigationCompleted += (s2, e2) =>
+                string token, accountId;
+                if (!ReadCodexCredentials(out token, out accountId))
                 {
-                    var uri = view.CoreWebView2.Source;
-                    if (uri != null && (uri.Contains("/settings/usage") || uri.Contains("/settings/analytics")))
+                    service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                    service.Status = "login_required";
+                    service.LastRefresh = DateTime.Now;
+                    return;
+                }
+
+                using (var req = new HttpRequestMessage(HttpMethod.Get, "https://chatgpt.com/backend-api/wham/usage"))
+                {
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    req.Headers.UserAgent.ParseAdd("codex-cli");
+                    if (!string.IsNullOrEmpty(accountId))
+                        req.Headers.Add("ChatGPT-Account-Id", accountId);
+                    using (var resp = await httpClient.SendAsync(req))
                     {
-                        login.BeginInvoke(new Action(() =>
+                        int code = (int)resp.StatusCode;
+                        if (code == 401 || code == 403)
                         {
-                            if (!login.IsDisposed) login.Close();
-                        }));
+                            service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                            service.Status = "login_required";
+                            service.LastRefresh = DateTime.Now;
+                            return;
+                        }
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            service.Status = "fetch_error";
+                            WriteDebug("codex-api-error.txt", "HTTP " + code);
+                            return;
+                        }
+                        string json = await resp.Content.ReadAsStringAsync();
+                        WriteDebug("codex-api.txt", json);
+                        service.Data = ParseCodexApi(json);
+                        service.Status = service.Data.Status;
+                        service.LastRefresh = DateTime.Now;
                     }
-                };
-                view.CoreWebView2.Navigate(service.Url);
-            };
-            TopMost = false;
-            login.FormClosed += async (s, e) =>
+                }
+            }
+            catch (Exception ex)
             {
-                TopMost = settings.AlwaysOnTop;
-                await RefreshServiceAsync(service, service.Name == "Claude" ? claudeView : codexView, true);
-            };
-            login.Show(this);
+                service.Status = "fetch_error";
+                WriteDebug("codex-api-error.txt", ex.ToString());
+            }
+            finally
+            {
+                service.IsRefreshing = false;
+                Invalidate();
+            }
         }
 
-        async Task LogoutServiceAsync(ServiceState service)
+        static UsageData ParseClaudeApi(string json)
         {
-            await InitializeWebViewsAsync();
-            var view = service.Name == "Claude" ? claudeView : codexView;
-            if (view.CoreWebView2 == null) return;
-            string host = service.Name == "Claude" ? "https://claude.ai" : "https://chatgpt.com";
-            var cookies = await view.CoreWebView2.CookieManager.GetCookiesAsync(host);
-            foreach (var c in cookies)
-                view.CoreWebView2.CookieManager.DeleteCookie(c);
-            view.CoreWebView2.Navigate("about:blank");
-            service.Data = new UsageData { Status = "login_required" };
+            var data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now };
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                data.Status = "no_data";
+                return data;
+            }
+
+            var fiveMatch = Regex.Match(json, "\"five_hour\"\\s*:\\s*(\\{[^{}]*\\})");
+            if (fiveMatch.Success)
+            {
+                var inner = fiveMatch.Groups[1].Value;
+                var u = Regex.Match(inner, "\"utilization\"\\s*:\\s*([\\d.]+)");
+                if (u.Success)
+                {
+                    double util;
+                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out util))
+                        data.FiveHourUsed = util;
+                }
+                var r = Regex.Match(inner, "\"resets_at\"\\s*:\\s*\"([^\"]+)\"");
+                if (r.Success) data.FiveHourReset = ConvertIsoToLegacyFormat(r.Groups[1].Value);
+            }
+
+            var weekMatch = Regex.Match(json, "\"seven_day\"\\s*:\\s*(\\{[^{}]*\\})");
+            if (weekMatch.Success)
+            {
+                var inner = weekMatch.Groups[1].Value;
+                var u = Regex.Match(inner, "\"utilization\"\\s*:\\s*([\\d.]+)");
+                if (u.Success)
+                {
+                    double util;
+                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out util))
+                        data.WeeklyUsed = util;
+                }
+                var r = Regex.Match(inner, "\"resets_at\"\\s*:\\s*\"([^\"]+)\"");
+                if (r.Success) data.WeeklyReset = ConvertIsoToLegacyFormat(r.Groups[1].Value);
+            }
+
+            if (!data.HasAnyValue()) data.Status = "no_data";
+            return data;
+        }
+
+        static UsageData ParseCodexApi(string json)
+        {
+            var data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now };
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                data.Status = "no_data";
+                return data;
+            }
+
+            var primary = Regex.Match(json, "\"primary_window\"\\s*:\\s*(\\{[^{}]*\\})");
+            if (primary.Success)
+            {
+                var inner = primary.Groups[1].Value;
+                var u = Regex.Match(inner, "\"used_percent\"\\s*:\\s*([\\d.]+)");
+                if (u.Success)
+                {
+                    double used;
+                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out used))
+                        data.FiveHourUsed = used;
+                }
+                var r = Regex.Match(inner, "\"reset_at\"\\s*:\\s*(\\d+)");
+                if (r.Success)
+                {
+                    long unixSec;
+                    if (long.TryParse(r.Groups[1].Value, out unixSec) && unixSec > 0)
+                        data.FiveHourReset = ConvertUnixSecondsToLegacyFormat(unixSec);
+                }
+            }
+
+            var secondary = Regex.Match(json, "\"secondary_window\"\\s*:\\s*(\\{[^{}]*\\})");
+            if (secondary.Success)
+            {
+                var inner = secondary.Groups[1].Value;
+                var u = Regex.Match(inner, "\"used_percent\"\\s*:\\s*([\\d.]+)");
+                if (u.Success)
+                {
+                    double used;
+                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out used))
+                        data.WeeklyUsed = used;
+                }
+                var r = Regex.Match(inner, "\"reset_at\"\\s*:\\s*(\\d+)");
+                if (r.Success)
+                {
+                    long unixSec;
+                    if (long.TryParse(r.Groups[1].Value, out unixSec) && unixSec > 0)
+                        data.WeeklyReset = ConvertUnixSecondsToLegacyFormat(unixSec);
+                }
+            }
+
+            if (!data.HasAnyValue()) data.Status = "no_data";
+            return data;
+        }
+
+        static bool ReadClaudeCredentials(out string token, out long expiresAtMs)
+        {
+            token = null;
+            expiresAtMs = 0;
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+            string content = TryReadFileWithRetry(path);
+            if (content == null) return false;
+
+            var t = Regex.Match(content, "\"accessToken\"\\s*:\\s*\"([^\"]+)\"");
+            var e = Regex.Match(content, "\"expiresAt\"\\s*:\\s*(\\d+)");
+            if (!t.Success || !e.Success) return false;
+            token = t.Groups[1].Value;
+            if (!long.TryParse(e.Groups[1].Value, out expiresAtMs)) return false;
+            return true;
+        }
+
+        static bool ReadCodexCredentials(out string token, out string accountId)
+        {
+            token = null;
+            accountId = null;
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
+            string content = TryReadFileWithRetry(path);
+            if (content == null) return false;
+
+            var t = Regex.Match(content, "\"access_token\"\\s*:\\s*\"([^\"]+)\"");
+            if (!t.Success) return false;
+            token = t.Groups[1].Value;
+            var a = Regex.Match(content, "\"account_id\"\\s*:\\s*\"([^\"]+)\"");
+            if (a.Success) accountId = a.Groups[1].Value;
+            return true;
+        }
+
+        static string TryReadFileWithRetry(string path)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                try { return File.ReadAllText(path); }
+                catch (FileNotFoundException) { return null; }
+                catch (DirectoryNotFoundException) { return null; }
+                catch (IOException) { System.Threading.Thread.Sleep(50); }
+                catch { return null; }
+            }
+            return null;
+        }
+
+        static bool IsClaudeTokenExpired(long expiresAtMs)
+        {
+            return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= expiresAtMs - 30000;
+        }
+
+        static string ConvertIsoToLegacyFormat(string iso)
+        {
+            DateTimeOffset dto;
+            if (DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out dto))
+                return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
+            return iso;
+        }
+
+        static string ConvertUnixSecondsToLegacyFormat(long unixSec)
+        {
+            try
+            {
+                var dto = DateTimeOffset.FromUnixTimeSeconds(unixSec);
+                return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
+            }
+            catch { return null; }
+        }
+
+        Task OpenLoginAsync(ServiceState service)
+        {
+            string cliCommand = service.Name == "Claude"
+                ? "title Headroom - type /login to authenticate && claude"
+                : "codex login";
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
+                {
+                    UseShellExecute = true,
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
+                };
+                System.Diagnostics.Process.Start(psi);
+                service.Status = "login_pending";
+                Invalidate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(T("CLI を起動できませんでした: ", "Failed to launch CLI: ") + ex.Message,
+                    "Headroom", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return Task.CompletedTask;
+        }
+
+        Task LogoutServiceAsync(ServiceState service)
+        {
+            service.Data = new UsageData { Name = service.Name, Source = service.Name + " API", UpdatedAt = DateTime.Now, Status = "login_required" };
+            service.Status = "login_required";
             service.LastRefresh = DateTime.MinValue;
             Invalidate();
+            return Task.CompletedTask;
         }
 
-        async Task<string> ScrapeAsync(WebView2 view, string url)
+        void SetupCredentialWatchers()
         {
-            var tcs = new TaskCompletionSource<bool>();
-            EventHandler<CoreWebView2NavigationCompletedEventArgs> handler = null;
-            handler = (s, e) =>
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            try
             {
-                view.CoreWebView2.NavigationCompleted -= handler;
-                tcs.TrySetResult(true);
-            };
-            view.CoreWebView2.NavigationCompleted += handler;
-            view.CoreWebView2.Navigate(WithCacheBuster(url));
-            await Task.WhenAny(tcs.Task, Task.Delay(30000));
-
-            string previous = "";
-            string current = "";
-            for (int i = 0; i < 10; i++)
-            {
-                await Task.Delay(1200);
-                current = await GetBodyTextAsync(view);
-                if (current.Length > 100 && current == previous) break;
-                previous = current;
+                string claudeDir = Path.Combine(userProfile, ".claude");
+                if (Directory.Exists(claudeDir))
+                {
+                    claudeCredWatcher = new FileSystemWatcher(claudeDir, ".credentials.json")
+                    {
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
+                        EnableRaisingEvents = true,
+                    };
+                    claudeCredWatcher.Changed += (s, e) => OnClaudeCredentialChanged();
+                    claudeCredWatcher.Created += (s, e) => OnClaudeCredentialChanged();
+                }
             }
-            return current;
-        }
-
-        static string WithCacheBuster(string url)
-        {
-            string hash = "";
-            int hashIndex = url.IndexOf('#');
-            if (hashIndex >= 0)
+            catch (Exception ex)
             {
-                hash = url.Substring(hashIndex);
-                url = url.Substring(0, hashIndex);
+                WriteDebug("watcher-claude-error.txt", ex.ToString());
             }
-            string sep = url.Contains("?") ? "&" : "?";
-            return url + sep + "_ai_usage_refresh=" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + hash;
-        }
-
-        async Task<string> GetBodyTextAsync(WebView2 view)
-        {
-            string json = await view.CoreWebView2.ExecuteScriptAsync("document.body ? document.body.innerText : ''");
-            return DecodeJsonString(json);
-        }
-
-        static string DecodeJsonString(string json)
-        {
-            if (string.IsNullOrEmpty(json) || json == "null") return "";
-            var m = Regex.Match(json, "^\"(.*)\"$", RegexOptions.Singleline);
-            if (!m.Success) return json;
-            return Regex.Unescape(m.Groups[1].Value);
-        }
-
-        static UsageData ParseClaude(string text)
-        {
-            var data = new UsageData { Name = "Claude", Source = "Claude Web", UpdatedAt = DateTime.Now };
-            if (string.IsNullOrWhiteSpace(text))
+            try
             {
-                data.Status = "no_data";
-                return data;
+                string codexDir = Path.Combine(userProfile, ".codex");
+                if (Directory.Exists(codexDir))
+                {
+                    codexCredWatcher = new FileSystemWatcher(codexDir, "auth.json")
+                    {
+                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
+                        EnableRaisingEvents = true,
+                    };
+                    codexCredWatcher.Changed += (s, e) => OnCodexCredentialChanged();
+                    codexCredWatcher.Created += (s, e) => OnCodexCredentialChanged();
+                }
             }
-            if (Regex.IsMatch(text, "ログイン|サインイン|Claude を試す|Claudeを体験する") &&
-                !Regex.IsMatch(text, "プラン使用制限|現在のセッション|週間制限"))
+            catch (Exception ex)
             {
-                data.Status = "login_required";
-                return data;
+                WriteDebug("watcher-codex-error.txt", ex.ToString());
             }
-
-            var lines = SplitLines(text);
-            int sessionStart = FindIndex(lines, "現在のセッション|Current session");
-            int weeklyStart = FindIndex(lines, "週間制限|すべてのモデル|Weekly limit|All models");
-            int designStart = FindIndex(lines, "Claude Design");
-
-            if (sessionStart >= 0)
-            {
-                int end = FirstPositive(lines.Count, weeklyStart, designStart);
-                data.FiveHourUsed = FindUsedPercent(lines, sessionStart, end);
-                data.FiveHourReset = FindResetInRange(lines, sessionStart, end);
-                data.FiveHourNotStarted = RangeHasNotStartedText(lines, sessionStart, end);
-            }
-            if (weeklyStart >= 0)
-            {
-                int end = FirstPositive(lines.Count, designStart);
-                data.WeeklyUsed = FindUsedPercent(lines, weeklyStart, end);
-                data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
-                data.WeeklyNotStarted = RangeHasNotStartedText(lines, weeklyStart, end);
-            }
-            ApplyNotStartedDefaults(data);
-            data.HitLimit = DetectLimitHit(text);
-            if (!data.HasAnyValue()) data.Status = "no_usage_text";
-            return data;
         }
 
-        static UsageData ParseCodex(string text)
+        void OnClaudeCredentialChanged()
         {
-            var data = new UsageData { Name = "Codex", Source = "Codex Web", UpdatedAt = DateTime.Now };
-            if (string.IsNullOrWhiteSpace(text))
+            if ((DateTime.Now - lastClaudeCredNotify).TotalSeconds < 1) return;
+            lastClaudeCredNotify = DateTime.Now;
+            try
             {
-                data.Status = "no_data";
-                return data;
+                BeginInvoke(new Action(async () =>
+                {
+                    await RefreshClaudeViaApiAsync(claude, true);
+                }));
             }
-            if (Regex.IsMatch(text, "ログイン|サインイン|Log in|Sign in", RegexOptions.IgnoreCase) &&
-                !Regex.IsMatch(text, "残高|使用制限|Codex|usage|limit", RegexOptions.IgnoreCase))
+            catch { }
+        }
+
+        void OnCodexCredentialChanged()
+        {
+            if ((DateTime.Now - lastCodexCredNotify).TotalSeconds < 1) return;
+            lastCodexCredNotify = DateTime.Now;
+            try
             {
-                data.Status = "login_required";
-                return data;
+                BeginInvoke(new Action(async () =>
+                {
+                    await RefreshCodexViaApiAsync(codex, true);
+                }));
             }
-
-            var lines = SplitLines(text);
-            int fiveStart = FindIndex(lines, "5時間の使用制限|5 hour");
-            int weeklyStart = FindIndex(lines, "週あたりの使用制限|weekly");
-            int creditStart = FindIndex(lines, "残りのクレジット|credits");
-
-            if (fiveStart >= 0)
-            {
-                int end = FirstPositive(lines.Count, weeklyStart, creditStart);
-                data.FiveHourRemaining = FindRemainingPercent(lines, fiveStart, end);
-                data.FiveHourReset = FindResetInRange(lines, fiveStart, end);
-                data.FiveHourNotStarted = RangeHasNotStartedText(lines, fiveStart, end);
-            }
-            if (weeklyStart >= 0)
-            {
-                int end = FirstPositive(lines.Count, creditStart);
-                data.WeeklyRemaining = FindRemainingPercent(lines, weeklyStart, end);
-                data.WeeklyReset = FindResetInRange(lines, weeklyStart, end);
-                data.WeeklyNotStarted = RangeHasNotStartedText(lines, weeklyStart, end);
-            }
-            ApplyNotStartedDefaults(data);
-            data.HitLimit = DetectLimitHit(text);
-            if (!data.HasAnyValue()) data.Status = "no_usage_text";
-            return data;
-        }
-
-        static bool DetectLimitHit(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return false;
-            return Regex.IsMatch(text,
-                @"上限に達しました|制限に達しました|You'?ve reached.{0,20}limit|limit reached|at capacity",
-                RegexOptions.IgnoreCase);
-        }
-
-        static List<string> SplitLines(string text)
-        {
-            return text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
-                .Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
-        }
-
-        static int FindIndex(List<string> lines, string pattern)
-        {
-            for (int i = 0; i < lines.Count; i++)
-                if (Regex.IsMatch(lines[i], pattern, RegexOptions.IgnoreCase))
-                    return i;
-            return -1;
-        }
-
-        static int FirstPositive(int fallback, params int[] values)
-        {
-            return values.Where(x => x >= 0).DefaultIfEmpty(fallback).Min();
-        }
-
-        static int? FindUsedPercent(List<string> lines, int start, int end)
-        {
-            for (int i = start; i < Math.Min(end, lines.Count); i++)
-            {
-                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*使用済み");
-                if (m.Success) return int.Parse(m.Groups[1].Value);
-            }
-            return null;
-        }
-
-        static int? FindRemainingPercent(List<string> lines, int start, int end)
-        {
-            for (int i = start; i < Math.Min(end, lines.Count); i++)
-            {
-                var m = Regex.Match(lines[i], @"(\d+)\s*%\s*(残り|remaining)?", RegexOptions.IgnoreCase);
-                if (!m.Success) continue;
-                bool hasRemainingWord = m.Groups[2].Success ||
-                    lines.Skip(i + 1).Take(Math.Min(2, end - i - 1)).Any(x => Regex.IsMatch(x, "^(残り|remaining)$", RegexOptions.IgnoreCase));
-                if (hasRemainingWord) return int.Parse(m.Groups[1].Value);
-            }
-            return null;
-        }
-
-        static string FindResetInRange(List<string> lines, int start, int end)
-        {
-            for (int i = start; i < Math.Min(end, lines.Count); i++)
-                if (Regex.IsMatch(lines[i], "リセット|reset", RegexOptions.IgnoreCase))
-                    return lines[i];
-            return null;
-        }
-
-        static bool RangeHasNotStartedText(List<string> lines, int start, int end)
-        {
-            for (int i = start; i < Math.Min(end, lines.Count); i++)
-                if (Regex.IsMatch(lines[i], "使い始めたら|使用を開始|開始されます|まだ.*利用|start(?:s|ed)? when|start using|not started", RegexOptions.IgnoreCase))
-                    return true;
-            return false;
-        }
-
-        static void ApplyNotStartedDefaults(UsageData data)
-        {
-            if (data.FiveHourNotStarted)
-            {
-                if (!data.FiveHourUsed.HasValue) data.FiveHourUsed = 0;
-                if (!data.FiveHourRemaining.HasValue || data.FiveHourRemaining.Value < 99) data.FiveHourRemaining = 100;
-                data.FiveHourReset = null;
-            }
-            if (data.WeeklyNotStarted)
-            {
-                if (!data.WeeklyUsed.HasValue) data.WeeklyUsed = 0;
-                if (!data.WeeklyRemaining.HasValue) data.WeeklyRemaining = 100;
-                data.WeeklyReset = null;
-            }
+            catch { }
         }
 
         void OnMouseDown(object sender, MouseEventArgs e)
@@ -668,9 +750,8 @@ namespace Headroom
             }
 
             ServiceState service = key.StartsWith("codex") ? codex : claude;
-            WebView2 view = service == codex ? codexView : claudeView;
             if (key.EndsWith("refresh"))
-                await RefreshServiceAsync(service, view, true);
+                await RefreshServiceAsync(service, true);
             else if (key.EndsWith("boost"))
                 ToggleBoost(service);
             else if (key.EndsWith("login"))
@@ -988,6 +1069,7 @@ namespace Headroom
                 case "fetch_error": return T("取得エラー", "Fetch error");
                 case "no_data": return T("データなし", "No data");
                 case "login_required": return T("ログインが必要", "Login required");
+                case "login_pending": return T("ログイン待ち...", "Signing in...");
                 case "no_usage_text": return T("使用量テキストなし", "No usage text");
                 case "starting": return T("起動中", "Starting");
                 default: return status ?? T("データなし", "No data");
@@ -1596,8 +1678,9 @@ namespace Headroom
                 () => { ApplyLayoutMinimumSize(); ApplyIdealSize(); TopMost = settings.AlwaysOnTop; Invalidate(); },
                 () => claude.Data.Status != "login_required",
                 () => codex.Data.Status != "login_required",
-                async () => await LogoutServiceAsync(claude),
-                async () => await LogoutServiceAsync(codex)))
+                () => LogoutServiceAsync(claude),
+                () => LogoutServiceAsync(codex)
+            ))
             {
                 dlg.ShowDialog(this);
                 if (dlg.DialogResult == DialogResult.OK)
@@ -2334,6 +2417,7 @@ namespace Headroom
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
+        public int NearResetIntervalSeconds = 15;
         public bool AlwaysOnTop = false;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
@@ -2374,6 +2458,7 @@ namespace Headroom
                 s.NormalIntervalMinutes = ReadInt(json, "normalIntervalMinutes", s.NormalIntervalMinutes);
                 s.BoostDurationMinutes = ReadInt(json, "boostDurationMinutes", s.BoostDurationMinutes);
                 s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
+                s.NearResetIntervalSeconds = ReadInt(json, "nearResetIntervalSeconds", s.NearResetIntervalSeconds);
                 s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
                 s.ShowCodex = ReadBool(json, "showCodex", s.ShowCodex);
                 s.ShowClaude = ReadBool(json, "showClaude", s.ShowClaude);
@@ -2404,6 +2489,7 @@ namespace Headroom
             NormalIntervalMinutes = other.NormalIntervalMinutes;
             BoostDurationMinutes = other.BoostDurationMinutes;
             BoostIntervalMinutes = other.BoostIntervalMinutes;
+            NearResetIntervalSeconds = other.NearResetIntervalSeconds;
             AlwaysOnTop = other.AlwaysOnTop;
             ShowCodex = other.ShowCodex;
             ShowClaude = other.ShowClaude;
@@ -2429,6 +2515,7 @@ namespace Headroom
                     "  \"normalIntervalMinutes\": " + NormalIntervalMinutes + ",\r\n" +
                     "  \"boostDurationMinutes\": " + BoostDurationMinutes + ",\r\n" +
                     "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +
+                    "  \"nearResetIntervalSeconds\": " + NearResetIntervalSeconds + ",\r\n" +
                     "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
                     "  \"showCodex\": " + (ShowCodex ? "true" : "false") + ",\r\n" +
                     "  \"showClaude\": " + (ShowClaude ? "true" : "false") + ",\r\n" +
