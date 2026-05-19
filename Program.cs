@@ -172,6 +172,7 @@ namespace Headroom
 
         async Task MaybeRefreshAsync(ServiceState service)
         {
+            if (service.ManuallyLoggedOut) return;
             if (service.IsRefreshing) return;
             if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
                 service.BoostUntil = null;
@@ -549,6 +550,7 @@ namespace Headroom
 
         Task OpenLoginAsync(ServiceState service)
         {
+            service.ManuallyLoggedOut = false;
             string cliCommand = service.Name == "Claude"
                 ? "title Headroom - type /login to authenticate && claude"
                 : "codex login";
@@ -576,6 +578,7 @@ namespace Headroom
             service.Data = new UsageData { Name = service.Name, Source = service.Name + " API", UpdatedAt = DateTime.Now, Status = "login_required" };
             service.Status = "login_required";
             service.LastRefresh = DateTime.MinValue;
+            service.ManuallyLoggedOut = true;
             Invalidate();
             return Task.CompletedTask;
         }
@@ -629,6 +632,7 @@ namespace Headroom
             {
                 BeginInvoke(new Action(async () =>
                 {
+                    claude.ManuallyLoggedOut = false;
                     await RefreshClaudeViaApiAsync(claude, true);
                 }));
             }
@@ -643,6 +647,7 @@ namespace Headroom
             {
                 BeginInvoke(new Action(async () =>
                 {
+                    codex.ManuallyLoggedOut = false;
                     await RefreshCodexViaApiAsync(codex, true);
                 }));
             }
@@ -1685,11 +1690,14 @@ namespace Headroom
                 dlg.ShowDialog(this);
                 if (dlg.DialogResult == DialogResult.OK)
                 {
+                    if (dlg.ResetRequested)
+                        settings.ResetToDefaults();
+
                     bool layoutChanged = settings.LayoutMode    != prevLayout     ||
                                         settings.ShowCodex      != prevShowCodex  ||
                                         settings.ShowClaude     != prevShowClaude;
                     ApplyLayoutMinimumSize();
-                    if (layoutChanged) ApplyIdealSize();
+                    if (layoutChanged || dlg.ResetRequested) ApplyIdealSize();
                     TopMost = settings.AlwaysOnTop;
                     settings.Save();
                 }
@@ -1771,6 +1779,7 @@ namespace Headroom
         Func<Task> logoutCodex;
         public bool LoginClaude { get; private set; }
         public bool LoginCodex  { get; private set; }
+        public bool ResetRequested { get; private set; }
 
         public SettingsForm(WidgetSettings settings, Action preview,
             Func<bool> claudeLoggedIn, Func<bool> codexLoggedIn,
@@ -1811,6 +1820,7 @@ namespace Headroom
                 Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel",
                 DialogResult = DialogResult.Cancel,
                 Location = new Point(Width - 218, 12), Width = 96, Height = 34,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 FillColor = Color.FromArgb(32, 32, 38),
                 ForeColor = Color.FromArgb(200, 206, 218),
                 Font = new Font("Yu Gothic UI", 10.5f),
@@ -1823,6 +1833,7 @@ namespace Headroom
                 Text = T("保存", "Save"), Tag = "保存|Save",
                 DialogResult = DialogResult.OK,
                 Location = new Point(Width - 114, 12), Width = 90, Height = 34,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 FillColor = Color.FromArgb(45, 132, 235),
                 ForeColor = Color.White,
                 Font = new Font("Yu Gothic UI", 10.5f, FontStyle.Bold),
@@ -1831,7 +1842,33 @@ namespace Headroom
                 PressedBackColor = Color.FromArgb(35, 112, 210),
                 BorderColorNormal = Color.FromArgb(45, 132, 235)
             };
+            var reset = new RoundButton {
+                Text = T("初期化", "Reset"), Tag = "初期化|Reset",
+                Location = new Point(Width - 316, 12), Width = 90, Height = 34,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                FillColor = Color.FromArgb(32, 32, 38),
+                ForeColor = Color.FromArgb(200, 206, 218),
+                Font = new Font("Yu Gothic UI", 10.5f),
+                CornerRadius = 0,
+                HoverBackColor   = Color.FromArgb(44, 44, 52),
+                PressedBackColor = Color.FromArgb(28, 28, 34),
+                BorderColorNormal = Color.FromArgb(60, 60, 68)
+            };
+            reset.Click += (s, e) =>
+            {
+                if (MessageBox.Show(
+                    T("設定をすべて初期値に戻しますか？", "Reset all settings to defaults?"),
+                    T("設定を初期化", "Reset settings"),
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    ResetRequested = true;
+                    DialogResult = DialogResult.OK;
+                    Close();
+                }
+            };
             ok.Click += (s, e) => ApplyToSettings();
+            Controls.Add(reset);
             Controls.Add(cancel);
             Controls.Add(ok);
 
@@ -2001,7 +2038,7 @@ namespace Headroom
                 short cx = (short)(m.LParam.ToInt32() & 0xFFFF);
                 short cy = (short)((m.LParam.ToInt32() >> 16) & 0xFFFF);
                 var pt = PointToClient(new Point(cx, cy));
-                if (pt.Y >= 0 && pt.Y < 56 && pt.X < Width - 225)
+                if (pt.Y >= 0 && pt.Y < 56 && pt.X < Width - 325)
                     m.Result = (IntPtr)HTCAPTION;
             }
         }
@@ -2324,6 +2361,7 @@ namespace Headroom
         public UsageData Data;
         public string Status;
         public bool IsRefreshing;
+        public bool ManuallyLoggedOut;
         public DateTime LastRefresh = DateTime.MinValue;
         public DateTime? BoostUntil;
         public double? DisplayedFivePct;
@@ -2431,6 +2469,17 @@ namespace Headroom
 
         static string SettingsPath
         {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Headroom",
+                    "settings.json");
+            }
+        }
+
+        static string LegacySettingsPath
+        {
             get { return Path.Combine(Application.StartupPath, "settings.json"); }
         }
 
@@ -2446,12 +2495,22 @@ namespace Headroom
             var s = new WidgetSettings();
             try
             {
-                if (!File.Exists(SettingsPath))
+                string target = SettingsPath;
+                if (!File.Exists(target))
                 {
-                    s.Save();
-                    return s;
+                    string legacy = LegacySettingsPath;
+                    if (File.Exists(legacy))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(target));
+                        File.Copy(legacy, target, false);
+                    }
+                    else
+                    {
+                        s.Save();
+                        return s;
+                    }
                 }
-                string json = File.ReadAllText(SettingsPath);
+                string json = File.ReadAllText(target);
                 s.Width = ReadInt(json, "width", s.Width);
                 s.Height = ReadInt(json, "height", s.Height);
                 s.Language = ReadString(json, "language", s.Language);
@@ -2502,11 +2561,16 @@ namespace Headroom
             CriticalRemainingPercent = other.CriticalRemainingPercent;
         }
 
+        public void ResetToDefaults()
+        {
+            CopyFrom(new WidgetSettings());
+        }
+
         public void Save()
         {
             try
             {
-                Directory.CreateDirectory(Application.StartupPath);
+                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
                 File.WriteAllText(SettingsPath,
                     "{\r\n" +
                     "  \"width\": " + Width + ",\r\n" +

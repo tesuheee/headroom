@@ -13,15 +13,16 @@ A compact Windows desktop widget that shows how much Claude and Codex quota head
 - **Side-by-side monitoring** — Claude and Codex, both 5-hour and weekly quotas, in one floating widget
 - **Flexible display** — per-service Remaining / Used switch, wide or tall layout, reset shown as countdown or clock time
 - **Low-quota warnings** — each quota row turns yellow or red at configurable thresholds
-- **Account controls** — log in or log out of Claude / Codex from the embedded browser session
+- **Account controls** — log in or log out of Claude / Codex from the Settings dialog
 
 ## Getting Started
 
 1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
-3. On first launch, click **Login** on each card and sign in to Claude / Codex through the embedded browser. You can also manage sessions from **Settings → Account**.
-
-> Requires the WebView2 Runtime (preinstalled on Windows 11 and recent Windows 10).
+3. On first launch, click **Login** on each card. A terminal window opens:
+   - **Claude**: type `/login` and follow the browser sign-in flow.
+   - **Codex**: the `codex login` browser flow starts automatically.
+   You can also manage sessions from **Settings → Account**.
 
 ## Screens
 
@@ -85,7 +86,11 @@ Open with the ⚙ icon on the side rail.
 
 ## How it works
 
-The app hosts two hidden WebView2 instances pointed at the Claude and Codex usage pages, parses the rendered text, and renders a custom dark UI. Login sessions live in the WebView2 user-data folder under `%LOCALAPPDATA%\Headroom\`; credentials are not sent anywhere else. Existing sessions from older `AiUsageWebView2` builds are copied forward automatically on first launch.
+The app reads OAuth tokens from `%USERPROFILE%\.claude\.credentials.json` (Claude) and
+`%USERPROFILE%\.codex\auth.json` (Codex), calls the respective usage APIs directly, and
+renders a custom dark UI. Credentials are managed exclusively by the Claude Code CLI and
+Codex CLI - Headroom never writes to those files. Settings are stored in
+`%LOCALAPPDATA%\Headroom\settings.json`.
 
 ## Build from source
 
@@ -93,12 +98,12 @@ The app hosts two hidden WebView2 instances pointed at the Claude and Codex usag
 .\build.ps1
 ```
 
-Windows + .NET Framework 4 required (csc.exe path is hard-coded in `build.ps1`). The WebView2 NuGet package is fetched on first build.
+Windows + .NET Framework 4 required (csc.exe path is hard-coded in `build.ps1`).
 
 To create a release archive:
 
 ```powershell
-.\build.ps1 -Version 1.3.6
+.\build.ps1 -Version 2.0.0
 ```
 
 The archive is written to `releases/Headroom-vX.Y.Z.zip`.
