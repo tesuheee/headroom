@@ -549,7 +549,9 @@ namespace Headroom
 
         Task OpenLoginAsync(ServiceState service)
         {
-            string cliCommand = service.Name == "Claude" ? "claude login" : "codex login";
+            string cliCommand = service.Name == "Claude"
+                ? "title Headroom - type /login to authenticate && claude"
+                : "codex login";
             try
             {
                 var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
