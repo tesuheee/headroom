@@ -2,6 +2,12 @@
 
 # Headroom
 
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom)
+[![.NET Framework](https://img.shields.io/badge/.NET_Framework-4-512BD4)](https://dotnet.microsoft.com/)
+[![Language](https://img.shields.io/badge/Language-C%23-239120)](https://learn.microsoft.com/dotnet/csharp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/tesuheee/headroom)](https://github.com/tesuheee/headroom/releases/latest)
+
 Claude と Codex の上限までの余裕（headroom）をひと目で確認できる、Windows 用の小さなデスクトップウィジェットです。
 
 ## できること
