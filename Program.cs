@@ -77,9 +77,12 @@ namespace Headroom
         const string CodexOAuthClientId     = "app_EMoamEEZ73f0CkXaXp7hrann";
         const string CodexOAuthAuthorizeUrl = "https://auth.openai.com/oauth/authorize";
         const string CodexOAuthTokenUrl     = "https://auth.openai.com/oauth/token";
-        const string CodexOAuthScopes       = "openid profile email offline_access";
+        const string CodexOAuthScopes       = "openid profile email offline_access api.connectors.read api.connectors.invoke";
+        const int CodexOAuthDefaultPort     = 1455;
+        const int CodexOAuthFallbackPort    = 1457;
 
         const int PkceLoginTimeoutMs = 5 * 60 * 1000;
+        const int DefaultRateLimitBackoffMinutes = 30;
 
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
@@ -121,6 +124,7 @@ namespace Headroom
         Point resizeStartPoint;
         Size resizeStartSize;
         string hoverKey = "";
+        bool sideRailVisible;
         int spinnerFrame;
         int paintSubtick;
         const float LabelFontSize   = 10.8f;
@@ -145,6 +149,11 @@ namespace Headroom
             KeyPreview = true;
             ShowInTaskbar = true;
 
+            claude.ManuallyLoggedOut = settings.ClaudeLoggedOut;
+            codex.ManuallyLoggedOut = settings.CodexLoggedOut;
+            if (claude.ManuallyLoggedOut) MarkLoggedOut(claude);
+            if (codex.ManuallyLoggedOut) MarkLoggedOut(codex);
+
             if (HeadroomOptions.FixtureMode) SetupFixtureWatcher();
             else SetupCredentialWatchers();
 
@@ -164,7 +173,7 @@ namespace Headroom
                     silentDragging = false;
                 }
             };
-            MouseLeave += (s, e) => { hoverKey = ""; Invalidate(); };
+            MouseLeave += (s, e) => { hoverKey = ""; sideRailVisible = false; Invalidate(); };
             Resize += (s, e) =>
             {
                 settings.Width = Width;
@@ -228,6 +237,15 @@ namespace Headroom
         {
             if (service.ManuallyLoggedOut) return;
             if (service.IsRefreshing) return;
+            if (service.RateLimitedUntil.HasValue)
+            {
+                if (service.RateLimitedUntil.Value > DateTime.Now)
+                {
+                    service.Status = "rate_limited";
+                    return;
+                }
+                service.RateLimitedUntil = null;
+            }
             if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
                 service.BoostUntil = null;
 
@@ -309,12 +327,25 @@ namespace Headroom
 
         async Task RefreshServiceAsync(ServiceState service, bool manual)
         {
+            if (service.RateLimitedUntil.HasValue && service.RateLimitedUntil.Value > DateTime.Now)
+            {
+                service.Status = "rate_limited";
+                Invalidate();
+                return;
+            }
+            service.RateLimitedUntil = null;
             if (service.Name == "Claude") await RefreshClaudeViaApiAsync(service, manual);
             else                          await RefreshCodexViaApiAsync(service, manual);
         }
 
         async Task RefreshClaudeViaApiAsync(ServiceState service, bool manual)
         {
+            if (service.ManuallyLoggedOut)
+            {
+                MarkLoggedOut(service);
+                Invalidate();
+                return;
+            }
             if (service.IsRefreshing) return;
             service.IsRefreshing = true;
             if (manual) service.Status = "updating";
@@ -372,9 +403,15 @@ namespace Headroom
                                 service.LastRefresh = DateTime.Now;
                                 return;
                             }
+                            if (code == 429)
+                            {
+                                ApplyRateLimit(service, resp, "claude-api-error.txt", code);
+                                return;
+                            }
                             if (!resp.IsSuccessStatusCode)
                             {
                                 service.Status = "fetch_error";
+                                service.LastRefresh = DateTime.Now;
                                 WriteDebug("claude-api-error.txt", "HTTP " + code);
                                 return;
                             }
@@ -382,6 +419,7 @@ namespace Headroom
                             WriteDebug("claude-api.txt", json);
                             service.Data = ParseClaudeApi(json);
                             service.Status = service.Data.Status;
+                            service.RateLimitedUntil = null;
                             service.LastRefresh = DateTime.Now;
                             return;
                         }
@@ -402,6 +440,12 @@ namespace Headroom
 
         async Task RefreshCodexViaApiAsync(ServiceState service, bool manual)
         {
+            if (service.ManuallyLoggedOut)
+            {
+                MarkLoggedOut(service);
+                Invalidate();
+                return;
+            }
             if (service.IsRefreshing) return;
             service.IsRefreshing = true;
             if (manual) service.Status = "updating";
@@ -456,9 +500,15 @@ namespace Headroom
                                 service.LastRefresh = DateTime.Now;
                                 return;
                             }
+                            if (code == 429)
+                            {
+                                ApplyRateLimit(service, resp, "codex-api-error.txt", code);
+                                return;
+                            }
                             if (!resp.IsSuccessStatusCode)
                             {
                                 service.Status = "fetch_error";
+                                service.LastRefresh = DateTime.Now;
                                 WriteDebug("codex-api-error.txt", "HTTP " + code);
                                 return;
                             }
@@ -466,6 +516,7 @@ namespace Headroom
                             WriteDebug("codex-api.txt", json);
                             service.Data = ParseCodexApi(json);
                             service.Status = service.Data.Status;
+                            service.RateLimitedUntil = null;
                             service.LastRefresh = DateTime.Now;
                             return;
                         }
@@ -519,7 +570,42 @@ namespace Headroom
                 service.Data.Source = "Fixture";
             }
             service.Status = service.Data.Status;
+            service.RateLimitedUntil = null;
             service.LastRefresh = DateTime.Now;
+        }
+
+        static void ApplyRateLimit(ServiceState service, HttpResponseMessage resp, string debugName, int code)
+        {
+            DateTime until = RateLimitUntil(resp);
+            service.RateLimitedUntil = until;
+            service.Status = "rate_limited";
+            service.LastRefresh = DateTime.Now;
+
+            string retryAfter = resp.Headers.RetryAfter == null ? "" : resp.Headers.RetryAfter.ToString();
+            WriteDebug(debugName,
+                "HTTP " + code + "\r\n" +
+                "Retry-After: " + retryAfter + "\r\n" +
+                "Backoff until: " + until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+        }
+
+        static DateTime RateLimitUntil(HttpResponseMessage resp)
+        {
+            var retryAfter = resp.Headers.RetryAfter;
+            if (retryAfter != null)
+            {
+                if (retryAfter.Delta.HasValue)
+                {
+                    double seconds = Math.Max(60, Math.Min(7200, retryAfter.Delta.Value.TotalSeconds));
+                    return DateTime.Now.AddSeconds(seconds);
+                }
+                if (retryAfter.Date.HasValue)
+                {
+                    DateTime target = retryAfter.Date.Value.LocalDateTime;
+                    if (target > DateTime.Now)
+                        return target;
+                }
+            }
+            return DateTime.Now.AddMinutes(DefaultRateLimitBackoffMinutes);
         }
 
         static UsageData ParseClaudeApi(string json)
@@ -676,6 +762,14 @@ namespace Headroom
             return true;
         }
 
+        static string ReadCodexIdToken()
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
+            string content = TryReadFileWithRetry(path);
+            if (content == null) return null;
+            return ExtractJsonString(content, "id_token");
+        }
+
         static string TryReadFileWithRetry(string path)
         {
             for (int i = 0; i < 3; i++)
@@ -761,6 +855,25 @@ namespace Headroom
             return port;
         }
 
+        static bool TryStartOAuthListener(int port, out HttpListener listener, out Exception error)
+        {
+            listener = new HttpListener();
+            error = null;
+            listener.Prefixes.Add("http://localhost:" + port + "/");
+            try
+            {
+                listener.Start();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+                try { listener.Close(); } catch { }
+                listener = null;
+                return false;
+            }
+        }
+
         static async Task<string> WaitForOAuthCallbackAsync(HttpListener listener, string expectedState, int timeoutMs)
         {
             Task<HttpListenerContext> getCtx = listener.GetContextAsync();
@@ -823,12 +936,16 @@ namespace Headroom
             File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
         }
 
-        static void WriteCodexCredentials(string accessToken, string refreshToken, string accountId, long expiresAtMs)
+        static void WriteCodexCredentials(string accessToken, string refreshToken, string idToken, string accountId, long expiresAtMs)
         {
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             var sb = new System.Text.StringBuilder();
-            sb.Append("{\n  \"tokens\": {\n");
+            sb.Append("{\n");
+            sb.Append("  \"auth_mode\": \"chatgpt\",\n");
+            sb.Append("  \"tokens\": {\n");
+            if (!string.IsNullOrEmpty(idToken))
+                sb.Append("    \"id_token\": \"").Append(JsonEscape(idToken)).Append("\",\n");
             sb.Append("    \"access_token\": \"").Append(JsonEscape(accessToken ?? "")).Append("\"");
             if (!string.IsNullOrEmpty(refreshToken))
                 sb.Append(",\n    \"refresh_token\": \"").Append(JsonEscape(refreshToken)).Append("\"");
@@ -836,7 +953,11 @@ namespace Headroom
                 sb.Append(",\n    \"account_id\": \"").Append(JsonEscape(accountId)).Append("\"");
             if (expiresAtMs > 0)
                 sb.Append(",\n    \"expires_at_ms\": ").Append(expiresAtMs);
-            sb.Append("\n  }\n}\n");
+            sb.Append("\n  },\n");
+            sb.Append("  \"last_refresh\": \"")
+              .Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture))
+              .Append("\"\n");
+            sb.Append("}\n");
             File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
         }
 
@@ -1020,15 +1141,21 @@ namespace Headroom
             string verifier = GeneratePkceVerifier();
             string challenge = GeneratePkceChallenge(verifier);
             string state = GeneratePkceVerifier();
-            int port;
-            try { port = GetFreeLocalPort(); }
-            catch (Exception ex) { WriteDebug("codex-pkce-error.txt", "port: " + ex); return false; }
+            int port = CodexOAuthDefaultPort;
+            HttpListener listener;
+            Exception firstError;
+            if (!TryStartOAuthListener(port, out listener, out firstError))
+            {
+                port = CodexOAuthFallbackPort;
+                Exception fallbackError;
+                if (!TryStartOAuthListener(port, out listener, out fallbackError))
+                {
+                    WriteDebug("codex-pkce-error.txt", "listener " + CodexOAuthDefaultPort + ": " + firstError + "\nlistener " + CodexOAuthFallbackPort + ": " + fallbackError);
+                    return false;
+                }
+            }
 
-            string redirectUri = "http://localhost:" + port + "/callback";
-            var listener = new HttpListener();
-            listener.Prefixes.Add("http://localhost:" + port + "/");
-            try { listener.Start(); }
-            catch (Exception ex) { WriteDebug("codex-pkce-error.txt", "listener: " + ex); return false; }
+            string redirectUri = "http://localhost:" + port + "/auth/callback";
 
             string authorizeUrl = CodexOAuthAuthorizeUrl
                 + "?response_type=code"
@@ -1037,7 +1164,10 @@ namespace Headroom
                 + "&scope=" + Uri.EscapeDataString(CodexOAuthScopes)
                 + "&code_challenge=" + Uri.EscapeDataString(challenge)
                 + "&code_challenge_method=S256"
-                + "&state=" + Uri.EscapeDataString(state);
+                + "&id_token_add_organizations=true"
+                + "&codex_cli_simplified_flow=true"
+                + "&state=" + Uri.EscapeDataString(state)
+                + "&originator=headroom";
 
             try
             {
@@ -1098,7 +1228,7 @@ namespace Headroom
                                        ?? ExtractAccountIdFromIdToken(idToken);
                     long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                         + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
-                    WriteCodexCredentials(accessToken, refreshToken, accountId, expiresAtMs);
+                    WriteCodexCredentials(accessToken, refreshToken, idToken, accountId, expiresAtMs);
                     return true;
                 }
             }
@@ -1134,6 +1264,7 @@ namespace Headroom
                     string idToken = ExtractJsonString(body, "id_token");
                     long expiresIn = ExtractJsonLong(body, "expires_in");
                     if (string.IsNullOrEmpty(accessToken)) return false;
+                    if (string.IsNullOrEmpty(idToken)) idToken = ReadCodexIdToken();
                     string accountId = ExtractJsonString(body, "account_id")
                                        ?? ExtractAccountIdFromIdToken(idToken)
                                        ?? existingAccountId;
@@ -1142,7 +1273,7 @@ namespace Headroom
                     lastCodexCredNotify = DateTime.Now;
                     WriteCodexCredentials(accessToken,
                         !string.IsNullOrEmpty(newRefresh) ? newRefresh : refreshToken,
-                        accountId, expiresAtMs);
+                        idToken, accountId, expiresAtMs);
                     return true;
                 }
             }
@@ -1196,6 +1327,7 @@ namespace Headroom
         async Task OpenLoginAsync(ServiceState service)
         {
             service.ManuallyLoggedOut = false;
+            SetLoggedOutSetting(service, false);
             string cliName = service.Name == "Claude" ? "claude" : "codex";
 
             if (IsCliAvailable(cliName))
@@ -1245,22 +1377,43 @@ namespace Headroom
                 WriteDebug(cliName + "-pkce-error.txt", ex.ToString());
             }
 
-            if (!ok && service.Status == "login_pending")
+            if (ok)
+            {
+                SetupCredentialWatchers();
+                service.ManuallyLoggedOut = false;
+                await RefreshServiceAsync(service, true);
+            }
+            else if (service.Status == "login_pending")
             {
                 service.Status = "login_required";
                 Invalidate();
             }
-            // 成功時は credentials.json 更新 → FileSystemWatcher 経由で残量取得サイクル発火
         }
 
         Task LogoutServiceAsync(ServiceState service)
         {
+            MarkLoggedOut(service);
+            service.ManuallyLoggedOut = true;
+            SetLoggedOutSetting(service, true);
+            Invalidate();
+            return Task.CompletedTask;
+        }
+
+        void MarkLoggedOut(ServiceState service)
+        {
             service.Data = new UsageData { Name = service.Name, Source = service.Name + " API", UpdatedAt = DateTime.Now, Status = "login_required" };
             service.Status = "login_required";
             service.LastRefresh = DateTime.MinValue;
-            service.ManuallyLoggedOut = true;
-            Invalidate();
-            return Task.CompletedTask;
+            service.RateLimitedUntil = null;
+            service.DisplayedFivePct = null;
+            service.DisplayedWeekPct = null;
+        }
+
+        void SetLoggedOutSetting(ServiceState service, bool value)
+        {
+            if (service.Name == "Claude") settings.ClaudeLoggedOut = value;
+            else settings.CodexLoggedOut = value;
+            settings.Save();
         }
 
         void SetupCredentialWatchers()
@@ -1269,16 +1422,19 @@ namespace Headroom
             try
             {
                 string claudeDir = Path.Combine(userProfile, ".claude");
-                if (Directory.Exists(claudeDir))
+                Directory.CreateDirectory(claudeDir);
+                if (claudeCredWatcher != null)
                 {
-                    claudeCredWatcher = new FileSystemWatcher(claudeDir, ".credentials.json")
-                    {
-                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
-                        EnableRaisingEvents = true,
-                    };
-                    claudeCredWatcher.Changed += (s, e) => OnClaudeCredentialChanged();
-                    claudeCredWatcher.Created += (s, e) => OnClaudeCredentialChanged();
+                    try { claudeCredWatcher.Dispose(); } catch { }
+                    claudeCredWatcher = null;
                 }
+                claudeCredWatcher = new FileSystemWatcher(claudeDir, ".credentials.json")
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
+                    EnableRaisingEvents = true,
+                };
+                claudeCredWatcher.Changed += (s, e) => OnClaudeCredentialChanged();
+                claudeCredWatcher.Created += (s, e) => OnClaudeCredentialChanged();
             }
             catch (Exception ex)
             {
@@ -1287,16 +1443,19 @@ namespace Headroom
             try
             {
                 string codexDir = Path.Combine(userProfile, ".codex");
-                if (Directory.Exists(codexDir))
+                Directory.CreateDirectory(codexDir);
+                if (codexCredWatcher != null)
                 {
-                    codexCredWatcher = new FileSystemWatcher(codexDir, "auth.json")
-                    {
-                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
-                        EnableRaisingEvents = true,
-                    };
-                    codexCredWatcher.Changed += (s, e) => OnCodexCredentialChanged();
-                    codexCredWatcher.Created += (s, e) => OnCodexCredentialChanged();
+                    try { codexCredWatcher.Dispose(); } catch { }
+                    codexCredWatcher = null;
                 }
+                codexCredWatcher = new FileSystemWatcher(codexDir, "auth.json")
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName,
+                    EnableRaisingEvents = true,
+                };
+                codexCredWatcher.Changed += (s, e) => OnCodexCredentialChanged();
+                codexCredWatcher.Created += (s, e) => OnCodexCredentialChanged();
             }
             catch (Exception ex)
             {
@@ -1334,6 +1493,8 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     claude.ManuallyLoggedOut = false;
+                    settings.ClaudeLoggedOut = false;
+                    settings.Save();
                     await RefreshClaudeViaApiAsync(claude, true);
                 }));
             }
@@ -1349,6 +1510,8 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     codex.ManuallyLoggedOut = false;
+                    settings.CodexLoggedOut = false;
+                    settings.Save();
                     await RefreshCodexViaApiAsync(codex, true);
                 }));
             }
@@ -1531,6 +1694,17 @@ namespace Headroom
                 return;
             }
 
+            bool nextSideRailVisible = IsSideRailHotZone(e.Location);
+            if (sideRailVisible != nextSideRailVisible)
+            {
+                sideRailVisible = nextSideRailVisible;
+                if (!sideRailVisible && IsSideRailKey(hoverKey))
+                    hoverKey = "";
+                Invalidate();
+            }
+            if (sideRailVisible)
+                RegisterSideRailHits();
+
             string key = HitKey(e.Location);
             Cursor = key.Length > 0 ? Cursors.Hand : (IsResizeGrip(e.Location) ? Cursors.SizeNWSE : Cursors.Default);
             if (hoverKey != key)
@@ -1576,6 +1750,7 @@ namespace Headroom
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             g.Clear(Color.Black);
             hits.Clear();
+            silentHits.Clear();
 
             int y = 0;
             int gap = 10;
@@ -1600,7 +1775,8 @@ namespace Headroom
                 DrawService(g, visible[0].Item1, 0, y, cardW, contentH, visible[0].Item2);
                 DrawService(g, visible[1].Item1, cardW + gap, y, cardW, contentH, visible[1].Item2);
             }
-            DrawSideRail(g);
+            if (sideRailVisible)
+                DrawSideRail(g);
         }
 
         List<Tuple<ServiceState, string>> VisibleServices()
@@ -1649,12 +1825,7 @@ namespace Headroom
             int weekY     = 108;
             int settingsY = 134;
 
-            hits["close"]     = new Rectangle(x - 6, closeY    - 6, 28, 28);
-            hits["pin"]       = new Rectangle(x - 6, pinY      - 6, 28, 28);
-            hits["token"]     = new Rectangle(x - 6, tokenY    - 6, 28, 28);
-            hits["fiveReset"] = new Rectangle(x - 6, fiveY     - 6, 28, 28);
-            hits["weekReset"] = new Rectangle(x - 6, weekY     - 6, 28, 28);
-            hits["settings"]  = new Rectangle(x - 6, settingsY - 6, 28, 28);
+            RegisterSideRailHits();
 
             DrawIconButton(g, "close",     x, closeY,    Color.FromArgb(160, 160, 165), DrawCloseIcon);
             DrawIconButton(g, "pin",       x, pinY,       settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
@@ -1662,6 +1833,34 @@ namespace Headroom
             DrawIconButton(g, "fiveReset", x, fiveY,      Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
             DrawIconButton(g, "weekReset", x, weekY,      Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
             DrawIconButton(g, "settings",  x, settingsY,  Color.FromArgb(130, 130, 135), DrawGearIcon);
+        }
+
+        void RegisterSideRailHits()
+        {
+            int x         = ClientSize.Width - 24;
+            int closeY    = 4;
+            int pinY      = 30;
+            int tokenY    = 56;
+            int fiveY     = 82;
+            int weekY     = 108;
+            int settingsY = 134;
+
+            hits["close"]     = new Rectangle(x - 6, closeY    - 6, 28, 28);
+            hits["pin"]       = new Rectangle(x - 6, pinY      - 6, 28, 28);
+            hits["token"]     = new Rectangle(x - 6, tokenY    - 6, 28, 28);
+            hits["fiveReset"] = new Rectangle(x - 6, fiveY     - 6, 28, 28);
+            hits["weekReset"] = new Rectangle(x - 6, weekY     - 6, 28, 28);
+            hits["settings"]  = new Rectangle(x - 6, settingsY - 6, 28, 28);
+        }
+
+        bool IsSideRailHotZone(Point p)
+        {
+            return p.X >= ClientSize.Width - 34 && p.X < ClientSize.Width && p.Y >= 0 && p.Y < ClientSize.Height;
+        }
+
+        static bool IsSideRailKey(string key)
+        {
+            return key == "close" || key == "pin" || key == "token" || key == "fiveReset" || key == "weekReset" || key == "settings";
         }
 
         delegate void IconPainter(Graphics g, Rectangle r, Color color);
@@ -1725,6 +1924,8 @@ namespace Headroom
                     DrawBadge(g, T("古い", "Stale"), x + 100, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50));
                 if (exhausted)
                     DrawBadge(g, T("上限", "Limit"), x + 100, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100));
+                if (state.Status == "rate_limited")
+                    DrawBadge(g, T("待機", "Wait"), x + 100, y + 14, Color.FromArgb(80, 64, 28), Color.FromArgb(220, 185, 80));
                 DrawCardControls(g, state, x, y, w, keyPrefix);
 
                 if (!state.Data.HasAnyValue())
@@ -1787,6 +1988,7 @@ namespace Headroom
             switch (status)
             {
                 case "updating": return T("更新中", "Updating");
+                case "rate_limited": return T("429待機中", "Rate limited");
                 case "fetch_error": return T("一時的にAPIに接続できません", "Temporarily unreachable");
                 case "no_data": return T("データなし", "No data");
                 case "login_required": return T("ログインしてください", "Please log in");
@@ -1882,14 +2084,18 @@ namespace Headroom
             if (hitMode != null)
                 silentHits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
             g.DrawString(modeText, labelFont, dimBrush, modeX, labelY);
-            string pctStr = empty ? "--" : pct.Value + "%";
-            int pctColW = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
+            string pctDigits = empty ? "--" : pct.Value.ToString(CultureInfo.InvariantCulture);
+            int digitColW = Math.Max(34, (int)Math.Ceiling(g.MeasureString("100", numFont).Width));
+            int pctSignW = Math.Max(10, (int)Math.Ceiling(g.MeasureString("%", numFont).Width));
+            int pctColW = digitColW + pctSignW + 2;
             using (var pctFormat = new StringFormat())
             {
-                pctFormat.Alignment = StringAlignment.Near;
+                pctFormat.Alignment = StringAlignment.Far;
                 pctFormat.LineAlignment = StringAlignment.Near;
                 pctFormat.FormatFlags = StringFormatFlags.NoWrap;
-                g.DrawString(pctStr, numFont, pctBrush, new RectangleF(percentX, y - 4, pctColW + 4, numFont.Height + 4), pctFormat);
+                g.DrawString(pctDigits, numFont, pctBrush, new RectangleF(percentX, y - 4, digitColW, numFont.Height + 4), pctFormat);
+                if (!empty)
+                    g.DrawString("%", numFont, pctBrush, percentX + digitColW + 2, y - 4);
             }
             int barX = percentX + pctColW + 4;
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
@@ -2459,6 +2665,16 @@ namespace Headroom
             get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom"); }
         }
 
+        internal static string ClaudeCredentialPath
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json"); }
+        }
+
+        internal static string CodexCredentialPath
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json"); }
+        }
+
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
@@ -2682,7 +2898,7 @@ namespace Headroom
             {
                 Location = new Point(24, contentH + 8),
                 Width = body.Width - 48,
-                Height = 26,
+                Height = 52,
                 Padding = new Padding(2, 0, 2, 0),
                 Font = new Font("Yu Gothic UI", 8f),
                 ForeColor = Color.FromArgb(100, 106, 120),
@@ -3006,6 +3222,7 @@ namespace Headroom
             if (locationsLabel == null) return;
             locationsLabel.Text =
                 T("設定ファイル: ", "Settings: ") + WidgetSettings.SettingsPath + "\r\n" +
+                T("認証ファイル: ", "Auth: ") + UsageForm.ClaudeCredentialPath + " / " + UsageForm.CodexCredentialPath + "\r\n" +
                 T("ログ: ", "Logs: ") + UsageForm.DebugDirectory;
             tooltips.SetToolTip(locationsLabel, T("クリックで設定ファイルを選択表示", "Click to reveal the settings file"));
         }
@@ -3158,6 +3375,7 @@ namespace Headroom
         public bool IsRefreshing;
         public bool ManuallyLoggedOut;
         public DateTime LastRefresh = DateTime.MinValue;
+        public DateTime? RateLimitedUntil;
         public DateTime? BoostUntil;
         public double? DisplayedFivePct;
         public double? DisplayedWeekPct;
@@ -3257,6 +3475,8 @@ namespace Headroom
         public string LayoutMode = "horizontal";
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
+        public bool CodexLoggedOut = false;
+        public bool ClaudeLoggedOut = false;
         public string FiveHourResetMode = "relative";
         public string WeeklyResetMode = "time";
         public int WarningRemainingPercent = 50;
@@ -3322,6 +3542,8 @@ namespace Headroom
                 s.LayoutMode = NormalizeLayoutMode(ReadString(json, "layoutMode", s.LayoutMode));
                 s.CodexShowUsed = ReadBool(json, "codexShowUsed", s.CodexShowUsed);
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
+                s.CodexLoggedOut = ReadBool(json, "codexLoggedOut", s.CodexLoggedOut);
+                s.ClaudeLoggedOut = ReadBool(json, "claudeLoggedOut", s.ClaudeLoggedOut);
                 s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
                 s.WeeklyResetMode = NormalizeResetMode(ReadString(json, "weeklyResetMode", s.WeeklyResetMode));
                 s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
@@ -3353,6 +3575,8 @@ namespace Headroom
             LayoutMode = other.LayoutMode;
             CodexShowUsed = other.CodexShowUsed;
             ClaudeShowUsed = other.ClaudeShowUsed;
+            CodexLoggedOut = other.CodexLoggedOut;
+            ClaudeLoggedOut = other.ClaudeLoggedOut;
             FiveHourResetMode = other.FiveHourResetMode;
             WeeklyResetMode = other.WeeklyResetMode;
             WarningRemainingPercent = other.WarningRemainingPercent;
@@ -3384,6 +3608,8 @@ namespace Headroom
                     "  \"layoutMode\": \"" + Escape(LayoutMode) + "\",\r\n" +
                     "  \"codexShowUsed\": " + (CodexShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
+                    "  \"codexLoggedOut\": " + (CodexLoggedOut ? "true" : "false") + ",\r\n" +
+                    "  \"claudeLoggedOut\": " + (ClaudeLoggedOut ? "true" : "false") + ",\r\n" +
                     "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
                     "  \"weeklyResetMode\": \"" + Escape(WeeklyResetMode) + "\",\r\n" +
                     "  \"warningRemainingPercent\": " + WarningRemainingPercent + ",\r\n" +
