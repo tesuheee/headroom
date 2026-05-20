@@ -11,3 +11,16 @@ settings.json
 
 .cert-thumbprint
 .claude/
+
+# IDE
+.idea/
+*.user
+*.suo
+
+# OS-generated
+Thumbs.db
+desktop.ini
+
+# Backups / temp
+*.bak
+*.tmp
