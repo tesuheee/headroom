@@ -190,6 +190,7 @@ namespace Headroom
             paintTimer.Interval = 40;
             paintTimer.Tick += (s, e) =>
             {
+                UpdateSideRailVisibilityFromCursor();
                 paintSubtick = (paintSubtick + 1) % 6;
                 if (paintSubtick == 0) spinnerFrame = (spinnerFrame + 1) % 4;
                 UpdateBarAnimation(codex,  settings.CodexShowUsed);
@@ -1672,6 +1673,45 @@ namespace Headroom
             return "";
         }
 
+        void UpdateSideRailVisibilityFromCursor()
+        {
+            Point p = PointToClient(Cursor.Position);
+            bool visible = ClientRectangle.Contains(p);
+            if (!visible)
+            {
+                if (!sideRailVisible && hoverKey.Length == 0) return;
+                sideRailVisible = false;
+                hoverKey = "";
+                toolTip.Hide(this);
+                tooltipTimer.Stop();
+                Invalidate();
+                return;
+            }
+
+            if (!sideRailVisible)
+                sideRailVisible = true;
+
+            RegisterSideRailHits();
+            string key = HitKey(p);
+            if (hoverKey == key) return;
+            hoverKey = key;
+            toolTip.Hide(this);
+            tooltipTimer.Stop();
+            pendingTooltipText = "";
+            string tip = TooltipText(key);
+            if (tip.Length > 0)
+            {
+                Rectangle hr;
+                if (hits.TryGetValue(key, out hr))
+                    pendingTooltipLocation = new Point(hr.X + hr.Width / 2, hr.Y + hr.Height + 4);
+                else
+                    pendingTooltipLocation = new Point(p.X + 12, p.Y + 18);
+                pendingTooltipText = tip;
+                tooltipTimer.Start();
+            }
+            Invalidate();
+        }
+
         void OnMouseMove(object sender, MouseEventArgs e)
         {
             if (resizing)
@@ -1694,16 +1734,8 @@ namespace Headroom
                 return;
             }
 
-            bool nextSideRailVisible = IsSideRailHotZone(e.Location);
-            if (sideRailVisible != nextSideRailVisible)
-            {
-                sideRailVisible = nextSideRailVisible;
-                if (!sideRailVisible && IsSideRailKey(hoverKey))
-                    hoverKey = "";
-                Invalidate();
-            }
-            if (sideRailVisible)
-                RegisterSideRailHits();
+            UpdateSideRailVisibilityFromCursor();
+            RegisterSideRailHits();
 
             string key = HitKey(e.Location);
             Cursor = key.Length > 0 ? Cursors.Hand : (IsResizeGrip(e.Location) ? Cursors.SizeNWSE : Cursors.Default);
@@ -1851,16 +1883,6 @@ namespace Headroom
             hits["fiveReset"] = new Rectangle(x - 6, fiveY     - 6, 28, 28);
             hits["weekReset"] = new Rectangle(x - 6, weekY     - 6, 28, 28);
             hits["settings"]  = new Rectangle(x - 6, settingsY - 6, 28, 28);
-        }
-
-        bool IsSideRailHotZone(Point p)
-        {
-            return p.X >= ClientSize.Width - 34 && p.X < ClientSize.Width && p.Y >= 0 && p.Y < ClientSize.Height;
-        }
-
-        static bool IsSideRailKey(string key)
-        {
-            return key == "close" || key == "pin" || key == "token" || key == "fiveReset" || key == "weekReset" || key == "settings";
         }
 
         delegate void IconPainter(Graphics g, Rectangle r, Color color);
