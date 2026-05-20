@@ -32,35 +32,35 @@ A compact Windows desktop widget that shows how much Claude and Codex quota head
 
 ### Both services, horizontal (default)
 
-![Overview](docs/01-overview.png)
+![Overview](docs/images/01-overview.png)
 
 ### Single service
 
-![Single service](docs/02-single-service.png)
+![Single service](docs/images/02-single-service.png)
 
 Disable a service from **Settings → General** to compact down to one card.
 
 ### Vertical layout
 
-![Vertical layout](docs/03-layout-vertical.png)
+![Vertical layout](docs/images/03-layout-vertical.png)
 
 Switch between wide and tall layouts from **Settings → Layout**.
 
 ### Display modes
 
-![Display modes](docs/04-display-modes.png)
+![Display modes](docs/images/04-display-modes.png)
 
 Each service has its own **Remaining / Used** switch. Reset can be a countdown ("3h 53m left") or an absolute clock time ("5/25 0:59"), set independently for 5-hour and weekly. Different phrasings on Claude and Codex pages are normalized so the format stays consistent.
 
 ### Color thresholds
 
-![Color thresholds](docs/05-color-thresholds.png)
+![Color thresholds](docs/images/05-color-thresholds.png)
 
 Each quota row is colored independently: normal rows use the service color, warning rows turn yellow, and critical rows turn red. If a quota is exhausted, the affected card also shows a `Limit` badge.
 
 ## Buttons
 
-![Side rail controls](docs/06-sidebar-guide.png)
+![Side rail controls](docs/images/06-sidebar-guide.png)
 
 | Side rail control | Action |
 |-------------------|--------|
@@ -109,7 +109,6 @@ For UI verification without spending quota, start Headroom with a fixture folder
 
 The folder must contain `claude.json` and `codex.json` in the same shape as the live API
 responses. Headroom watches those files and refreshes automatically when they change.
-Sample scenarios live under `docs/fixtures/`.
 
 ## Build from source
 

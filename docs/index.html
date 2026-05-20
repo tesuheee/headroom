@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Headroom Architecture</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111820'/%3E%3Cpath d='M8 20h16M8 12h16M12 8v16M20 8v16' stroke='%234e9dff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #506070;
+      --line: #d8e0ea;
+      --line-strong: #aebccc;
+      --codex: #168050;
+      --claude: #256fd6;
+      --api: #a14f13;
+      --settings: #7450b5;
+      --fixture: #0f7c8c;
+      --warn: #b87805;
+      --danger: #b83a3a;
+      --shadow: 0 16px 34px rgba(22, 32, 44, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+      line-height: 1.62;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 28px 22px;
+      background: #111820;
+      color: #edf3fb;
+      border-right: 1px solid #25313d;
+    }
+
+    nav h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    nav p {
+      margin: 0 0 24px;
+      color: #b7c4d2;
+      font-size: 13px;
+    }
+
+    nav a {
+      display: block;
+      padding: 9px 10px;
+      margin: 4px 0;
+      color: #d7e4f2;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    nav a:hover { background: #1c2835; }
+
+    main {
+      padding: 34px;
+      max-width: 1320px;
+      width: 100%;
+    }
+
+    section {
+      margin: 0 0 28px;
+      padding: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      line-height: 1.25;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+    }
+
+    p { margin: 0 0 12px; color: var(--muted); }
+    code {
+      padding: 2px 5px;
+      background: #edf2f7;
+      border: 1px solid #dbe4ee;
+      border-radius: 4px;
+      color: #203040;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: .92em;
+    }
+
+    .hero {
+      background: #0f1720;
+      color: #f4f7fb;
+      border-color: #25313d;
+      overflow: hidden;
+    }
+
+    .hero p { color: #c7d2df; max-width: 900px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .hero h2 {
+      font-size: 38px;
+      margin-bottom: 14px;
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #1d2835;
+      color: #e5edf6;
+      border: 1px solid #314252;
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .system-map {
+      padding: 18px;
+      background: #141f2a;
+      border: 1px solid #2f4052;
+      border-radius: 8px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .node {
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #f9fbfd;
+    }
+
+    .hero .node {
+      background: #192635;
+      border-color: #33465a;
+      color: #eef5fc;
+    }
+
+    .node strong { display: block; margin-bottom: 4px; }
+    .node small { display: block; color: #6b7c8d; }
+    .hero .node small { color: #b7c7d7; }
+
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+      margin: 12px 0;
+    }
+
+    .lane-title {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 12px;
+      border-radius: 8px;
+      background: #edf2f7;
+      border: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .flow {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .step {
+      min-width: 150px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    .arrow {
+      align-self: center;
+      color: var(--line-strong);
+      font-weight: 700;
+    }
+
+    .api { border-top: 4px solid var(--api); }
+    .settings { border-top: 4px solid var(--settings); }
+    .fixture { border-top: 4px solid var(--fixture); }
+    .codex { border-top: 4px solid var(--codex); }
+    .claude { border-top: 4px solid var(--claude); }
+    .danger { border-top: 4px solid var(--danger); }
+    .warn { border-top: 4px solid var(--warn); }
+
+    .mini-ui {
+      padding: 18px;
+      background: #050607;
+      border-radius: 8px;
+      border: 1px solid #20262c;
+    }
+
+    .widget {
+      display: grid;
+      grid-template-columns: 1fr 1fr 30px;
+      gap: 10px;
+      max-width: 760px;
+    }
+
+    .quota-card {
+      padding: 14px;
+      background: #171a20;
+      border: 1px solid #333942;
+      border-radius: 8px;
+      color: #f1f5f9;
+      min-height: 134px;
+    }
+
+    .quota-card.limit {
+      background: #281314;
+      border-color: #5c2e31;
+    }
+
+    .quota-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      font-weight: 700;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      height: 22px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #384554;
+      color: #dbe8f6;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .quota-row {
+      display: grid;
+      grid-template-columns: 78px 54px minmax(80px, 1fr);
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    .quota-row.disabled { color: #8792a2; }
+    .pct { font-size: 22px; font-weight: 800; }
+    .bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #10151b;
+      border: 1px solid #26313c;
+      overflow: hidden;
+    }
+
+    .fill { height: 100%; border-radius: inherit; background: #43c981; }
+    .fill.blue { background: #4e9dff; }
+    .fill.grey { background: #697281; }
+    .fill.red { background: #e05252; }
+
+    .rail {
+      display: grid;
+      align-content: center;
+      gap: 10px;
+      color: #9aa7b5;
+      font-size: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th { background: #edf2f7; color: #203040; }
+
+    .matrix td:first-child,
+    .matrix th:first-child {
+      width: 190px;
+      font-weight: 700;
+    }
+
+    .callout {
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid #cbd8e6;
+      background: #f8fbff;
+      color: #364656;
+    }
+
+    .callout strong { color: var(--ink); }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 0;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: 6px;
+      background: #f1f5f9;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      color: #405060;
+    }
+
+    .color { width: 12px; height: 12px; border-radius: 3px; background: currentColor; }
+
+    footer {
+      padding: 18px 0 40px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: 1fr; }
+      nav { position: relative; height: auto; }
+      main { padding: 18px; }
+      .hero-grid, .grid-2, .grid-3, .grid-4, .lane { grid-template-columns: 1fr; }
+      .widget { grid-template-columns: 1fr; }
+      .rail { grid-template-columns: repeat(6, 24px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <h1>Headroom</h1>
+      <p>最新実装に基づく単体アーキテクチャガイド</p>
+      <a href="#overview">Overview</a>
+      <a href="#program-shape">Program Shape</a>
+      <a href="#data-flow">Data Flow</a>
+      <a href="#login-flow">Login Flow</a>
+      <a href="#runtime">Runtime Loop</a>
+      <a href="#ui">UI Rendering</a>
+      <a href="#settings">Settings</a>
+      <a href="#fixture">Fixture Mode</a>
+      <a href="#states">State Matrix</a>
+      <a href="#storage">Storage</a>
+      <a href="#build">Build</a>
+      <a href="#maintenance">Maintenance</a>
+    </nav>
+
+    <main>
+      <section class="hero" id="overview">
+        <div class="hero-grid">
+          <div>
+            <h2>Headroom Architecture</h2>
+            <p>
+              Headroom は Claude Code と Codex の使用量を OAuth トークンで直接 API から取得し、
+              WinForms のカスタム描画で小さな常駐ウィジェットとして表示する Windows デスクトップアプリです。
+              CLI が入っている PC では CLI が保存したトークンを読み、入っていない PC では
+              Headroom 自身が PKCE OAuth フローで認証してトークンを保存します。
+              リフレッシュトークンによるアクセストークンの自動更新も自前で行います。
+            </p>
+            <div class="chips">
+              <span class="chip"><span class="dot" style="color: var(--api)"></span>Direct API</span>
+              <span class="chip"><span class="dot" style="color: var(--claude)"></span>PKCE OAuth</span>
+              <span class="chip"><span class="dot" style="color: var(--settings)"></span>Local settings</span>
+              <span class="chip"><span class="dot" style="color: var(--fixture)"></span>Fixture verification</span>
+              <span class="chip"><span class="dot" style="color: var(--danger)"></span>Quota state UI</span>
+            </div>
+          </div>
+          <div class="system-map">
+            <div class="stack">
+              <div class="node"><strong>WinForms App</strong><small>Program.cs / UsageForm / SettingsForm</small></div>
+              <div class="node"><strong>OAuth Credential Files</strong><small>.claude/.credentials.json, .codex/auth.json</small></div>
+              <div class="node"><strong>Usage APIs</strong><small>Anthropic OAuth usage, ChatGPT wham usage</small></div>
+              <div class="node"><strong>Renderer</strong><small>Graphics, bars, badges, side rail, settings dialog</small></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="program-shape">
+        <h2>Program Shape</h2>
+        <p>実装は単一の <code>Program.cs</code> にまとまっています。クラスの責務は明確に分かれています。</p>
+        <div class="grid-3">
+          <div class="node api">
+            <strong>Program / HeadroomOptions</strong>
+            <small>起動時引数と <code>HEADROOM_FIXTURE_DIR</code> を読み、通常モードかフィクスチャモードかを決めます。</small>
+          </div>
+          <div class="node codex">
+            <strong>UsageForm</strong>
+            <small>メインウィジェット。スケジューリング、API取得、状態更新、描画、クリック操作を担当します。</small>
+          </div>
+          <div class="node settings">
+            <strong>SettingsForm</strong>
+            <small>設定ダイアログ。ライブプレビュー、保存、キャンセル復元、設定/ログ場所表示を担当します。</small>
+          </div>
+          <div class="node claude">
+            <strong>ServiceState</strong>
+            <small>Claude / Codex それぞれの実行中状態、最終更新、Boost、バーアニメーション値を持ちます。</small>
+          </div>
+          <div class="node warn">
+            <strong>UsageData</strong>
+            <small>5時間枠、週次枠、リセット時刻、ステータスをサービス非依存の形に正規化します。</small>
+          </div>
+          <div class="node settings">
+            <strong>WidgetSettings</strong>
+            <small>表示モード、言語、サイズ、閾値、更新間隔を <code>settings.json</code> に保存します。</small>
+          </div>
+        </div>
+      </section>
+
+      <section id="data-flow">
+        <h2>Data Flow</h2>
+        <div class="lane">
+          <div class="lane-title">Claude</div>
+          <div class="flow">
+            <div class="step">Read<br><code>%USERPROFILE%\.claude\.credentials.json</code></div>
+            <div class="arrow">→</div>
+            <div class="step">GET<br><code>api.anthropic.com/api/oauth/usage</code></div>
+            <div class="arrow">→</div>
+            <div class="step">Parse<br><code>five_hour</code> / <code>seven_day</code></div>
+            <div class="arrow">→</div>
+            <div class="step">Normalize<br><code>UsageData</code></div>
+          </div>
+        </div>
+        <div class="lane">
+          <div class="lane-title">Codex</div>
+          <div class="flow">
+            <div class="step">Read<br><code>%USERPROFILE%\.codex\auth.json</code></div>
+            <div class="arrow">→</div>
+            <div class="step">GET<br><code>chatgpt.com/backend-api/wham/usage</code></div>
+            <div class="arrow">→</div>
+            <div class="step">Parse<br><code>primary_window</code> / <code>secondary_window</code></div>
+            <div class="arrow">→</div>
+            <div class="step">Normalize<br><code>UsageData</code></div>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>認証情報の書き込み:</strong> CLI（<code>claude</code> / <code>codex</code>）がインストールされている場合は、認証情報の書き込みは CLI に任せ、Headroom は読み取り専用です。CLI が無い場合は Headroom 自身が PKCE OAuth フローで取得し、CLI 互換形式で <code>.credentials.json</code> / <code>auth.json</code> に書き込みます。<br>
+          <strong>トークン更新:</strong> アクセストークン期限切れ時または 401 応答時に <code>refresh_token</code> で自動更新し、ファイルを上書きします。再ログインはほぼ発生しません。
+        </div>
+      </section>
+
+      <section id="login-flow">
+        <h2>Login Flow</h2>
+        <p>ログインボタンの動作は CLI 検出結果で分岐します。</p>
+        <div class="grid-2">
+          <div class="node codex">
+            <strong>CLI あり</strong>
+            <small><code>cmd.exe /k</code> で <code>claude</code> または <code>codex login</code> を起動。タイトルとプリバナーで「認証後はこのウィンドウを閉じてOK」を表示。</small>
+          </div>
+          <div class="node claude">
+            <strong>CLI 無し（PKCE）</strong>
+            <small>PKCE verifier/challenge を生成 → <code>HttpListener</code> を <code>localhost:動的ポート</code> で開き、システム既定ブラウザで認可URLを開く → <code>/callback</code> 受信 → トークン交換 POST → 認証ファイルに保存。</small>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>サービス</th><th>client_id</th><th>認可エンドポイント</th><th>トークンエンドポイント</th></tr></thead>
+          <tbody>
+            <tr><td>Claude</td><td><code>9d1c250a-…-5944d1962f5e</code></td><td><code>claude.ai/oauth/authorize</code></td><td><code>console.anthropic.com/v1/oauth/token</code></td></tr>
+            <tr><td>Codex</td><td><code>app_EMoamEEZ73f0CkXaXp7hrann</code></td><td><code>auth.openai.com/oauth/authorize</code></td><td><code>auth.openai.com/oauth/token</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="runtime">
+        <h2>Runtime Loop</h2>
+        <div class="grid-4">
+          <div class="node api"><strong>Launch</strong><small>設定ロード、モード判定、フォーム初期化。</small></div>
+          <div class="node settings"><strong>Watch</strong><small>通常は credential file、fixture 時は JSON を監視。</small></div>
+          <div class="node codex"><strong>Refresh</strong><small>手動、スケジュール、Boost、near-reset で更新。</small></div>
+          <div class="node danger"><strong>Render</strong><small>状態に応じてカード、バー、バッジ、色を再描画。</small></div>
+        </div>
+        <table>
+          <thead><tr><th>Trigger</th><th>処理</th><th>目的</th></tr></thead>
+          <tbody>
+            <tr><td><code>F5</code> / refresh icon</td><td><code>RefreshAllAsync</code> または単一サービス更新</td><td>今すぐ最新値を見る</td></tr>
+            <tr><td>Scheduler timer</td><td><code>MaybeRefreshAsync</code></td><td>通常間隔、Boost、リセット前後で自動更新</td></tr>
+            <tr><td>Credential watcher</td><td><code>OnClaudeCredentialChanged</code> / <code>OnCodexCredentialChanged</code></td><td>ログイン後に自動復帰</td></tr>
+            <tr><td>Fixture watcher</td><td><code>OnFixtureChanged</code></td><td>JSON編集からスクリーンショット確認までを短くする</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="ui">
+        <h2>UI Rendering</h2>
+        <p>メイン画面は標準コントロールではなく、<code>Graphics</code> で直接描画します。レイアウトは表示サービス数と横/縦設定で変わります。</p>
+        <div class="mini-ui">
+          <div class="widget">
+            <div class="quota-card">
+              <div class="quota-title"><span><span style="color: var(--codex)">●</span> Codex</span><span class="badge">Normal</span></div>
+              <div class="quota-row"><span>5時間 残り</span><span class="pct">51%</span><span class="bar"><span class="fill" style="width:51%"></span></span></div>
+              <div class="quota-row"><span>週 残り</span><span class="pct">92%</span><span class="bar"><span class="fill" style="width:92%"></span></span></div>
+            </div>
+            <div class="quota-card limit">
+              <div class="quota-title"><span><span style="color: var(--claude)">●</span> Claude</span><span class="badge">上限</span></div>
+              <div class="quota-row disabled"><span>5時間 残り</span><span class="pct">50%</span><span class="bar"><span class="fill grey" style="width:50%"></span></span></div>
+              <div class="quota-row"><span>週 残り</span><span class="pct">0%</span><span class="bar"><span class="fill red" style="width:2%"></span></span></div>
+            </div>
+            <div class="rail"><span>×</span><span>⚲</span><span>R</span><span>5h</span><span>W</span><span>⚙</span></div>
+          </div>
+        </div>
+        <div class="legend">
+          <span><i class="color" style="color: var(--codex)"></i>Codex accent</span>
+          <span><i class="color" style="color: var(--claude)"></i>Claude accent</span>
+          <span><i class="color" style="color: var(--danger)"></i>Limit state</span>
+          <span><i class="color" style="color: #697281"></i>Locked by weekly quota</span>
+        </div>
+      </section>
+
+      <section id="settings">
+        <h2>Settings</h2>
+        <div class="grid-2">
+          <div class="node settings">
+            <strong>保存先</strong>
+            <small><code>%LOCALAPPDATA%\Headroom\settings.json</code></small>
+          </div>
+          <div class="node settings">
+            <strong>ログ表示</strong>
+            <small>設定画面下部に「設定/ログの場所」を表示。言語切替に追従し、クリックで設定ファイルを開きます。</small>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Setting</th><th>影響</th></tr></thead>
+          <tbody>
+            <tr><td>Language</td><td>設定画面とメイン画面のラベル。初期値は英語。</td></tr>
+            <tr><td>ShowCodex / ShowClaude</td><td>1サービス表示または2サービス表示のレイアウトを決定。</td></tr>
+            <tr><td>LayoutMode</td><td>横並び / 縦並び。</td></tr>
+            <tr><td>CodexShowUsed / ClaudeShowUsed</td><td>残量表示と使用量表示をサービスごとに切替。</td></tr>
+            <tr><td>Warning / Critical thresholds</td><td>バー色を黄 / 赤に変える残量閾値。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="fixture">
+        <h2>Fixture Mode</h2>
+        <p>実際の利用枠を消費せず、UI状態をローカル JSON で再現します。JSON を編集すると <code>FileSystemWatcher</code> 経由でアプリが自動再描画し、スクリーンショットで確認できます。</p>
+        <div class="lane">
+          <div class="lane-title">Debug app</div>
+          <div class="flow">
+            <div class="step"><code>.\build.ps1 -DebugFixture</code></div>
+            <div class="arrow">→</div>
+            <div class="step"><code>debug\Headroom.fixture.exe</code></div>
+            <div class="arrow">→</div>
+            <div class="step"><code>--fixture &lt;フォルダ&gt;</code></div>
+            <div class="arrow">→</div>
+            <div class="step">Screenshot verification</div>
+          </div>
+        </div>
+        <p>
+          指定フォルダには本番 API レスポンスと同じ形の <code>claude.json</code> / <code>codex.json</code> を置きます。
+          ステータス検証用には <code>"status": "login_required"</code> を含む JSON を置けば <code>login_required</code> 状態を再現できます。
+        </p>
+      </section>
+
+      <section id="states">
+        <h2>State Matrix</h2>
+        <table class="matrix">
+          <thead><tr><th>断面</th><th>状態</th><th>UIで見るべきこと</th></tr></thead>
+          <tbody>
+            <tr><td>Quota</td><td>通常 / warning / critical / exhausted</td><td>バー色、カード色、上限バッジ、リセット表示。</td></tr>
+            <tr><td>Weekly lock</td><td>週次 0% + 5時間残あり</td><td>5時間行は使えそうに見せず、グレー化と週上限バッジを出す。</td></tr>
+            <tr><td>Auth</td><td>login_required / login_pending / ok / fetch_error</td><td><code>login_required</code> 時のみログインボタンを表示。<code>fetch_error</code>（一時的API不調）ではログインボタンを出さない。期限切れは refresh で透過的に解決し、ユーザー操作不要。</td></tr>
+            <tr><td>Freshness</td><td>最新 / stale</td><td>古いデータは Stale バッジとカード色で分かる。</td></tr>
+            <tr><td>Display</td><td>remaining / used</td><td>値の意味と閾値判定が反転しても見た目が破綻しない。</td></tr>
+            <tr><td>Layout</td><td>single / horizontal / vertical</td><td>サイズ、余白、サイドレール、文字の収まり。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="storage">
+        <h2>Storage</h2>
+        <div class="grid-3">
+          <div class="node settings">
+            <strong>Settings</strong>
+            <small><code>%LOCALAPPDATA%\Headroom\settings.json</code><br>ウィンドウサイズ、言語、表示、閾値。</small>
+          </div>
+          <div class="node api">
+            <strong>Credentials</strong>
+            <small><code>%USERPROFILE%\.claude\.credentials.json</code><br><code>%USERPROFILE%\.codex\auth.json</code><br>CLI 有り時は CLI 主導、CLI 無し時は Headroom が PKCE で取得・書き込み。リフレッシュは常に Headroom が行う。</small>
+          </div>
+          <div class="node warn">
+            <strong>Debug logs</strong>
+            <small><code>%USERPROFILE%\.headroom</code><br>APIレスポンス、HTTPエラー、watcherエラー。</small>
+          </div>
+        </div>
+      </section>
+
+      <section id="build">
+        <h2>Build</h2>
+        <div class="grid-2">
+          <div class="node codex">
+            <strong>Production build</strong>
+            <small><code>.\build.ps1</code><br><code>bin\Headroom.exe</code> を生成します。</small>
+          </div>
+          <div class="node fixture">
+            <strong>Fixture build</strong>
+            <small><code>.\build.ps1 -DebugFixture</code><br><code>debug\Headroom.fixture.exe</code> を生成します。</small>
+          </div>
+        </div>
+        <p>
+          通常 exe が起動中で <code>bin\Headroom.exe</code> をロックしている場合でも、
+          debug 出力なら検証用 exe を作れます。<code>debug/</code> は配布物にも Git にも含めません。
+        </p>
+      </section>
+
+      <section id="maintenance">
+        <h2>Maintenance</h2>
+        <div class="grid-2">
+          <div class="callout">
+            <strong>API変更に強くする:</strong>
+            パーサーは現在 Regex ベースです。APIレスポンスの形が変わった場合は
+            <code>ParseClaudeApi</code> / <code>ParseCodexApi</code> と fixture を同時に更新します。
+          </div>
+          <div class="callout">
+            <strong>UI回帰を潰す:</strong>
+            新しい表示状態を見つけたら、まず <code>docs/fixtures/</code> にシナリオを追加し、
+            <code>debug\Headroom.fixture.exe</code> でスクリーンショット確認します。
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        This document is standalone. It does not depend on deleted design references.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
