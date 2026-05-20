@@ -1,13 +1,13 @@
 [**English**] · [日本語](README.ja.md)
 
-# Headroom — Claude Code & Codex Usage Monitor
+# Headroom — AI Usage Monitor for Claude Code & Codex
 
 
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom-usage-monitor)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom-ai-usage-monitor)
 [![Language](https://img.shields.io/badge/Language-C%23-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headroom is a compact Windows desktop usage monitor for Claude Code and Codex. It shows remaining quota, used quota, reset times, login state, and rate-limit status in a small always-on-top widget.
+Headroom is a compact Windows desktop AI usage monitor for Claude Code and Codex. It shows remaining quota, used quota, reset times, login state, and rate-limit status in a small always-on-top widget.
 
 ## Features
 
@@ -19,7 +19,7 @@ Headroom is a compact Windows desktop usage monitor for Claude Code and Codex. I
 
 ## Getting Started
 
-1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom-usage-monitor/releases) and unzip anywhere.
+1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom-ai-usage-monitor/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
 3. On first launch, click **Login** on each card.
    - **If Claude / Codex CLI is installed**, a terminal window opens for the CLI's login flow.

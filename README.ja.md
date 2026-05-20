@@ -1,13 +1,13 @@
 [English](README.md) · [**日本語**]
 
-# Headroom — Claude Code & Codex 使用量モニター
+# Headroom — Claude Code & Codex 向け AI 使用量モニター
 
 
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom-usage-monitor)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom-ai-usage-monitor)
 [![Language](https://img.shields.io/badge/Language-C%23-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Headroom は Claude Code と Codex の使用量・残量・リセット時刻・ログイン状態を常時表示する、Windows 用の小さなデスクトップウィジェットです。
+Headroom は Claude Code と Codex の AI 使用量・残量・リセット時刻・ログイン状態を常時表示する、Windows 用の小さなデスクトップウィジェットです。
 
 ## できること
 
@@ -19,7 +19,7 @@ Headroom は Claude Code と Codex の使用量・残量・リセット時刻・
 
 ## 使い方
 
-1. [Releases](https://github.com/tesuheee/headroom-usage-monitor/releases) から最新版の `Headroom-vX.Y.Z.zip` をダウンロードして任意の場所に解凍
+1. [Releases](https://github.com/tesuheee/headroom-ai-usage-monitor/releases) から最新版の `Headroom-vX.Y.Z.zip` をダウンロードして任意の場所に解凍
 2. `Headroom.exe` を実行
 3. 初回のみ、各カードの **ログイン** ボタンを押します。
    - **Claude / Codex CLI が入っている場合**：ターミナルが開き、CLI のログインフローが始まります。
