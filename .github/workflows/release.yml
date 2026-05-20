@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: tag
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}' -replace '^v', ''
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build and package
+        shell: pwsh
+        run: .\build.ps1 -Version ${{ steps.tag.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: releases/Headroom-v${{ steps.tag.outputs.version }}.zip
+          generate_release_notes: true
