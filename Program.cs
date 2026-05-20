@@ -326,9 +326,9 @@ namespace Headroom
                     return;
                 }
 
-                string token;
+                string token, refreshToken;
                 long expiresAtMs;
-                if (!ReadClaudeCredentials(out token, out expiresAtMs))
+                if (!ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
                 {
                     service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
                     service.Status = "login_required";
@@ -337,37 +337,53 @@ namespace Headroom
                 }
                 if (IsClaudeTokenExpired(expiresAtMs))
                 {
-                    service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                    service.Status = "login_required";
-                    service.LastRefresh = DateTime.Now;
-                    return;
+                    bool refreshed = !string.IsNullOrEmpty(refreshToken)
+                        && await TryRefreshClaudeTokenAsync(refreshToken)
+                        && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs);
+                    if (!refreshed)
+                    {
+                        service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                        service.Status = "login_required";
+                        service.LastRefresh = DateTime.Now;
+                        return;
+                    }
                 }
 
-                using (var req = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage"))
+                for (int attempt = 0; attempt < 2; attempt++)
                 {
-                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                    req.Headers.Add("anthropic-beta", "oauth-2025-04-20");
-                    using (var resp = await httpClient.SendAsync(req))
+                    using (var req = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage"))
                     {
-                        int code = (int)resp.StatusCode;
-                        if (code == 401 || code == 403)
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                        req.Headers.Add("anthropic-beta", "oauth-2025-04-20");
+                        using (var resp = await httpClient.SendAsync(req))
                         {
-                            service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                            service.Status = "login_required";
+                            int code = (int)resp.StatusCode;
+                            if ((code == 401 || code == 403) && attempt == 0 && !string.IsNullOrEmpty(refreshToken)
+                                && await TryRefreshClaudeTokenAsync(refreshToken)
+                                && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
+                            {
+                                continue;
+                            }
+                            if (code == 401 || code == 403)
+                            {
+                                service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                                service.Status = "login_required";
+                                service.LastRefresh = DateTime.Now;
+                                return;
+                            }
+                            if (!resp.IsSuccessStatusCode)
+                            {
+                                service.Status = "fetch_error";
+                                WriteDebug("claude-api-error.txt", "HTTP " + code);
+                                return;
+                            }
+                            string json = await resp.Content.ReadAsStringAsync();
+                            WriteDebug("claude-api.txt", json);
+                            service.Data = ParseClaudeApi(json);
+                            service.Status = service.Data.Status;
                             service.LastRefresh = DateTime.Now;
                             return;
                         }
-                        if (!resp.IsSuccessStatusCode)
-                        {
-                            service.Status = "fetch_error";
-                            WriteDebug("claude-api-error.txt", "HTTP " + code);
-                            return;
-                        }
-                        string json = await resp.Content.ReadAsStringAsync();
-                        WriteDebug("claude-api.txt", json);
-                        service.Data = ParseClaudeApi(json);
-                        service.Status = service.Data.Status;
-                        service.LastRefresh = DateTime.Now;
                     }
                 }
             }
@@ -847,29 +863,204 @@ namespace Headroom
             catch { return null; }
         }
 
-        Task OpenLoginAsync(ServiceState service)
+        static string ExtractJsonString(string json, string key)
         {
-            service.ManuallyLoggedOut = false;
-            string cliCommand = service.Name == "Claude"
-                ? "title Headroom - type /login to authenticate && claude"
-                : "codex login";
+            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]+)\"");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        static long ExtractJsonLong(string json, string key)
+        {
+            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(-?\\d+)");
+            long v;
+            if (m.Success && long.TryParse(m.Groups[1].Value, out v)) return v;
+            return 0;
+        }
+
+        async Task<bool> StartClaudePkceLoginAsync(ServiceState service)
+        {
+            string verifier = GeneratePkceVerifier();
+            string challenge = GeneratePkceChallenge(verifier);
+            string state = GeneratePkceVerifier();
+            int port;
+            try { port = GetFreeLocalPort(); }
+            catch (Exception ex) { WriteDebug("claude-pkce-error.txt", "port: " + ex); return false; }
+
+            string redirectUri = "http://localhost:" + port + "/callback";
+            var listener = new HttpListener();
+            listener.Prefixes.Add("http://localhost:" + port + "/");
+            try { listener.Start(); }
+            catch (Exception ex) { WriteDebug("claude-pkce-error.txt", "listener: " + ex); return false; }
+
+            string authorizeUrl = ClaudeOAuthAuthorizeUrl
+                + "?response_type=code"
+                + "&client_id=" + Uri.EscapeDataString(ClaudeOAuthClientId)
+                + "&redirect_uri=" + Uri.EscapeDataString(redirectUri)
+                + "&scope=" + Uri.EscapeDataString(ClaudeOAuthScopes)
+                + "&code_challenge=" + Uri.EscapeDataString(challenge)
+                + "&code_challenge_method=S256"
+                + "&state=" + Uri.EscapeDataString(state)
+                + "&code=true";
+
             try
             {
-                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
-                {
-                    UseShellExecute = true,
-                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
-                };
+                var psi = new System.Diagnostics.ProcessStartInfo(authorizeUrl) { UseShellExecute = true };
                 System.Diagnostics.Process.Start(psi);
-                service.Status = "login_pending";
-                Invalidate();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(T("CLI を起動できませんでした: ", "Failed to launch CLI: ") + ex.Message,
-                    "Headroom", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                try { listener.Close(); } catch { }
+                WriteDebug("claude-pkce-error.txt", "browser: " + ex);
+                return false;
             }
-            return Task.CompletedTask;
+
+            string authCode;
+            try
+            {
+                authCode = await WaitForOAuthCallbackAsync(listener, state, PkceLoginTimeoutMs);
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("claude-pkce-error.txt", "callback: " + ex);
+                return false;
+            }
+            finally
+            {
+                try { listener.Close(); } catch { }
+            }
+
+            try
+            {
+                var formParams = new Dictionary<string, string>
+                {
+                    { "grant_type",    "authorization_code" },
+                    { "code",          authCode },
+                    { "redirect_uri",  redirectUri },
+                    { "client_id",     ClaudeOAuthClientId },
+                    { "code_verifier", verifier },
+                    { "state",         state },
+                };
+                using (var content = new FormUrlEncodedContent(formParams))
+                using (var resp = await httpClient.PostAsync(ClaudeOAuthTokenUrl, content))
+                {
+                    string body = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        WriteDebug("claude-pkce-error.txt", "exchange " + (int)resp.StatusCode + ": " + body);
+                        return false;
+                    }
+                    string accessToken = ExtractJsonString(body, "access_token");
+                    string refreshToken = ExtractJsonString(body, "refresh_token");
+                    long expiresIn = ExtractJsonLong(body, "expires_in");
+                    if (string.IsNullOrEmpty(accessToken))
+                    {
+                        WriteDebug("claude-pkce-error.txt", "missing access_token: " + body);
+                        return false;
+                    }
+                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
+                    WriteClaudeCredentials(accessToken, refreshToken, expiresAtMs, ClaudeOAuthScopes.Split(' '));
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("claude-pkce-error.txt", "exchange exception: " + ex);
+                return false;
+            }
+        }
+
+        async Task<bool> TryRefreshClaudeTokenAsync(string refreshToken)
+        {
+            if (string.IsNullOrEmpty(refreshToken)) return false;
+            try
+            {
+                var formParams = new Dictionary<string, string>
+                {
+                    { "grant_type",    "refresh_token" },
+                    { "refresh_token", refreshToken },
+                    { "client_id",     ClaudeOAuthClientId },
+                };
+                using (var content = new FormUrlEncodedContent(formParams))
+                using (var resp = await httpClient.PostAsync(ClaudeOAuthTokenUrl, content))
+                {
+                    string body = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        WriteDebug("claude-refresh-error.txt", (int)resp.StatusCode + ": " + body);
+                        return false;
+                    }
+                    string accessToken = ExtractJsonString(body, "access_token");
+                    string newRefresh = ExtractJsonString(body, "refresh_token");
+                    long expiresIn = ExtractJsonLong(body, "expires_in");
+                    if (string.IsNullOrEmpty(accessToken)) return false;
+                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
+                    lastClaudeCredNotify = DateTime.Now;
+                    WriteClaudeCredentials(accessToken,
+                        !string.IsNullOrEmpty(newRefresh) ? newRefresh : refreshToken,
+                        expiresAtMs, ClaudeOAuthScopes.Split(' '));
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("claude-refresh-error.txt", ex.ToString());
+                return false;
+            }
+        }
+
+        async Task OpenLoginAsync(ServiceState service)
+        {
+            service.ManuallyLoggedOut = false;
+            string cliName = service.Name == "Claude" ? "claude" : "codex";
+
+            if (IsCliAvailable(cliName))
+            {
+                string cliCommand = service.Name == "Claude"
+                    ? "title Headroom - type /login to authenticate && claude"
+                    : "codex login";
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
+                    {
+                        UseShellExecute = true,
+                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                    service.Status = "login_pending";
+                    Invalidate();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(T("CLI を起動できませんでした: ", "Failed to launch CLI: ") + ex.Message,
+                        "Headroom", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return;
+            }
+
+            // CLI 未インストール → PKCE フロー
+            service.Status = "login_pending";
+            Invalidate();
+
+            bool ok = false;
+            try
+            {
+                if (service.Name == "Claude")
+                    ok = await StartClaudePkceLoginAsync(service);
+                // Codex はコミット 3 で実装
+            }
+            catch (Exception ex)
+            {
+                WriteDebug(cliName + "-pkce-error.txt", ex.ToString());
+            }
+
+            if (!ok && service.Status == "login_pending")
+            {
+                service.Status = "login_required";
+                Invalidate();
+            }
+            // 成功時は credentials.json 更新 → FileSystemWatcher 経由で残量取得サイクル発火
         }
 
         Task LogoutServiceAsync(ServiceState service)
