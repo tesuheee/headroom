@@ -1,24 +1,25 @@
 [**English**] · [日本語](README.ja.md)
 
-# Headroom *— Claude & Codex quota monitor —*
+# Headroom — Claude Code & Codex Usage Monitor
 
 
-[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom)
+[![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://github.com/tesuheee/headroom-usage-monitor)
 [![Language](https://img.shields.io/badge/Language-C%23-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A compact Windows desktop widget that shows how much Claude and Codex quota headroom you have left.
+Headroom is a compact Windows desktop usage monitor for Claude Code and Codex. It shows remaining quota, used quota, reset times, login state, and rate-limit status in a small always-on-top widget.
 
 ## Features
 
-- **Side-by-side monitoring** — Claude and Codex, both 5-hour and weekly quotas, in one floating widget
+- **Side-by-side usage monitoring** — Claude Code and Codex, both 5-hour and weekly quotas, in one floating widget
 - **Flexible display** — per-service Remaining / Used switch, wide or tall layout, reset shown as countdown or clock time
 - **Low-quota warnings** — each quota row turns yellow or red at configurable thresholds
-- **Account controls** — log in or log out of Claude / Codex from the Settings dialog
+- **Account controls** — log in or log out of Claude Code / Codex from the Settings dialog
+- **OAuth-aware status** — reads CLI-compatible credentials, refreshes tokens, and backs off when the usage API returns rate limits
 
 ## Getting Started
 
-1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom/releases) and unzip anywhere.
+1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom-usage-monitor/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
 3. On first launch, click **Login** on each card.
    - **If Claude / Codex CLI is installed**, a terminal window opens for the CLI's login flow.
@@ -89,7 +90,7 @@ Open with the ⚙ icon on the side rail.
 
 ## How it works
 
-The app reads OAuth tokens from `%USERPROFILE%\.claude\.credentials.json` (Claude) and
+The app reads OAuth tokens from `%USERPROFILE%\.claude\.credentials.json` (Claude Code) and
 `%USERPROFILE%\.codex\auth.json` (Codex), calls the respective usage APIs directly, and
 renders a custom dark UI. When a CLI is installed, Headroom defers credential writes to it.
 When no CLI is present, Headroom runs its own PKCE OAuth flow (system browser + localhost
