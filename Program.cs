@@ -125,6 +125,7 @@ namespace Headroom
         Size resizeStartSize;
         string hoverKey = "";
         bool sideRailVisible;
+        double sideRailOpacity;
         int spinnerFrame;
         int paintSubtick;
         const float LabelFontSize   = 10.8f;
@@ -191,6 +192,7 @@ namespace Headroom
             paintTimer.Tick += (s, e) =>
             {
                 UpdateSideRailVisibilityFromCursor();
+                UpdateSideRailOpacity();
                 paintSubtick = (paintSubtick + 1) % 6;
                 if (paintSubtick == 0) spinnerFrame = (spinnerFrame + 1) % 4;
                 UpdateBarAnimation(codex,  settings.CodexShowUsed);
@@ -1682,6 +1684,7 @@ namespace Headroom
                 if (!sideRailVisible && hoverKey.Length == 0) return;
                 sideRailVisible = false;
                 hoverKey = "";
+                Cursor = Cursors.Default;
                 toolTip.Hide(this);
                 tooltipTimer.Stop();
                 Invalidate();
@@ -1693,6 +1696,7 @@ namespace Headroom
 
             RegisterSideRailHits();
             string key = HitKey(p);
+            Cursor = key.Length > 0 ? Cursors.Hand : (IsResizeGrip(p) ? Cursors.SizeNWSE : Cursors.Default);
             if (hoverKey == key) return;
             hoverKey = key;
             toolTip.Hide(this);
@@ -1710,6 +1714,18 @@ namespace Headroom
                 tooltipTimer.Start();
             }
             Invalidate();
+        }
+
+        void UpdateSideRailOpacity()
+        {
+            double target = sideRailVisible ? 1.0 : 0.0;
+            double diff = target - sideRailOpacity;
+            if (Math.Abs(diff) < 0.03)
+            {
+                sideRailOpacity = target;
+                return;
+            }
+            sideRailOpacity += diff * 0.28;
         }
 
         void OnMouseMove(object sender, MouseEventArgs e)
@@ -1807,7 +1823,7 @@ namespace Headroom
                 DrawService(g, visible[0].Item1, 0, y, cardW, contentH, visible[0].Item2);
                 DrawService(g, visible[1].Item1, cardW + gap, y, cardW, contentH, visible[1].Item2);
             }
-            if (sideRailVisible)
+            if (sideRailOpacity > 0.01)
                 DrawSideRail(g);
         }
 
@@ -1892,13 +1908,23 @@ namespace Headroom
             var r = new Rectangle(x - 1, y - 1, 20, 20);
             if (hoverKey == key)
             {
-                Color hoverBg = key == "close" ? Color.FromArgb(190, 58, 58) : Color.FromArgb(50, 50, 54);
+                Color rawHoverBg =
+                    key == "close" ? Color.FromArgb(190, 58, 58) :
+                    key == "settings" ? Color.FromArgb(45, 132, 235) :
+                    Color.FromArgb(50, 50, 54);
+                Color hoverBg = FadeSideRailColor(rawHoverBg);
                 using (var bg = new SolidBrush(hoverBg))
                 using (var path = RoundRect(r.X - 4, r.Y - 4, r.Width + 8, r.Height + 8, 12))
                     g.FillPath(bg, path);
-                color = key == "close" ? Color.White : Color.FromArgb(Math.Min(255, color.R + 40), Math.Min(255, color.G + 40), Math.Min(255, color.B + 40));
+                color = key == "close" || key == "settings" ? Color.White : Color.FromArgb(Math.Min(255, color.R + 40), Math.Min(255, color.G + 40), Math.Min(255, color.B + 40));
             }
-            painter(g, r, color);
+            painter(g, r, FadeSideRailColor(color));
+        }
+
+        Color FadeSideRailColor(Color color)
+        {
+            int alpha = Math.Max(0, Math.Min(255, (int)Math.Round(color.A * sideRailOpacity)));
+            return Color.FromArgb(alpha, color.R, color.G, color.B);
         }
 
         void DrawService(Graphics g, ServiceState state, int x, int y, int w, int h, string keyPrefix)
