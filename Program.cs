@@ -69,6 +69,17 @@ namespace Headroom
         const string ClaudeUrl = "https://claude.ai/settings/usage";
         const string CodexUrl = "https://chatgpt.com/codex/cloud/settings/analytics#usage";
 
+        const string ClaudeOAuthClientId    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+        const string ClaudeOAuthAuthorizeUrl = "https://claude.ai/oauth/authorize";
+        const string ClaudeOAuthTokenUrl     = "https://console.anthropic.com/v1/oauth/token";
+        const string ClaudeOAuthScopes       = "user:inference user:profile";
+
+        const string CodexOAuthClientId     = "app_EMoamEEZ73f0CkXaXp7hrann";
+        const string CodexOAuthAuthorizeUrl = "https://auth.openai.com/oauth/authorize";
+        const string CodexOAuthTokenUrl     = "https://auth.openai.com/oauth/token";
+
+        const int PkceLoginTimeoutMs = 5 * 60 * 1000;
+
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
         [DllImport("user32.dll", EntryPoint = "SendMessage")]
@@ -573,7 +584,14 @@ namespace Headroom
 
         static bool ReadClaudeCredentials(out string token, out long expiresAtMs)
         {
+            string refreshTokenIgnored;
+            return ReadClaudeCredentials(out token, out refreshTokenIgnored, out expiresAtMs);
+        }
+
+        static bool ReadClaudeCredentials(out string token, out string refreshToken, out long expiresAtMs)
+        {
             token = null;
+            refreshToken = null;
             expiresAtMs = 0;
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
             string content = TryReadFileWithRetry(path);
@@ -584,13 +602,25 @@ namespace Headroom
             if (!t.Success || !e.Success) return false;
             token = t.Groups[1].Value;
             if (!long.TryParse(e.Groups[1].Value, out expiresAtMs)) return false;
+
+            var r = Regex.Match(content, "\"refreshToken\"\\s*:\\s*\"([^\"]+)\"");
+            if (r.Success) refreshToken = r.Groups[1].Value;
             return true;
         }
 
         static bool ReadCodexCredentials(out string token, out string accountId)
         {
+            string refreshTokenIgnored;
+            long expiresAtIgnored;
+            return ReadCodexCredentials(out token, out refreshTokenIgnored, out accountId, out expiresAtIgnored);
+        }
+
+        static bool ReadCodexCredentials(out string token, out string refreshToken, out string accountId, out long expiresAtMs)
+        {
             token = null;
+            refreshToken = null;
             accountId = null;
+            expiresAtMs = 0;
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
             string content = TryReadFileWithRetry(path);
             if (content == null) return false;
@@ -598,8 +628,15 @@ namespace Headroom
             var t = Regex.Match(content, "\"access_token\"\\s*:\\s*\"([^\"]+)\"");
             if (!t.Success) return false;
             token = t.Groups[1].Value;
+
+            var rt = Regex.Match(content, "\"refresh_token\"\\s*:\\s*\"([^\"]+)\"");
+            if (rt.Success) refreshToken = rt.Groups[1].Value;
+
             var a = Regex.Match(content, "\"account_id\"\\s*:\\s*\"([^\"]+)\"");
             if (a.Success) accountId = a.Groups[1].Value;
+
+            var ex = Regex.Match(content, "\"expires_at_ms\"\\s*:\\s*(\\d+)");
+            if (ex.Success) long.TryParse(ex.Groups[1].Value, out expiresAtMs);
             return true;
         }
 
@@ -619,6 +656,176 @@ namespace Headroom
         static bool IsClaudeTokenExpired(long expiresAtMs)
         {
             return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= expiresAtMs - 30000;
+        }
+
+        static readonly Dictionary<string, bool> cliAvailabilityCache = new Dictionary<string, bool>();
+        static readonly object cliCacheLock = new object();
+
+        static bool IsCliAvailable(string exeName)
+        {
+            lock (cliCacheLock)
+            {
+                bool cached;
+                if (cliAvailabilityCache.TryGetValue(exeName, out cached)) return cached;
+            }
+            bool result = false;
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c where " + exeName)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    if (p.WaitForExit(2000)) result = p.ExitCode == 0;
+                    else { try { p.Kill(); } catch { } }
+                }
+            }
+            catch { result = false; }
+            lock (cliCacheLock) { cliAvailabilityCache[exeName] = result; }
+            return result;
+        }
+
+        static void InvalidateCliCache(string exeName)
+        {
+            lock (cliCacheLock) { cliAvailabilityCache.Remove(exeName); }
+        }
+
+        static string GeneratePkceVerifier()
+        {
+            var bytes = new byte[32];
+            using (var rng = new System.Security.Cryptography.RNGCryptoServiceProvider())
+                rng.GetBytes(bytes);
+            return Base64UrlEncode(bytes);
+        }
+
+        static string GeneratePkceChallenge(string verifier)
+        {
+            using (var sha = new System.Security.Cryptography.SHA256Managed())
+            {
+                byte[] hash = sha.ComputeHash(System.Text.Encoding.ASCII.GetBytes(verifier));
+                return Base64UrlEncode(hash);
+            }
+        }
+
+        static string Base64UrlEncode(byte[] data)
+        {
+            return Convert.ToBase64String(data).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        }
+
+        static int GetFreeLocalPort()
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+
+        static async Task<string> WaitForOAuthCallbackAsync(HttpListener listener, string expectedState, int timeoutMs)
+        {
+            Task<HttpListenerContext> getCtx = listener.GetContextAsync();
+            Task delay = Task.Delay(timeoutMs);
+            var completed = await Task.WhenAny(getCtx, delay);
+            if (completed == delay)
+            {
+                try { listener.Stop(); } catch { }
+                throw new TimeoutException("OAuth callback timed out");
+            }
+            HttpListenerContext ctx = await getCtx;
+            string code = null;
+            string error = null;
+            try
+            {
+                string query = ctx.Request.Url.Query ?? "";
+                var cm = Regex.Match(query, "[?&]code=([^&]+)");
+                var sm = Regex.Match(query, "[?&]state=([^&]+)");
+                var em = Regex.Match(query, "[?&]error=([^&]+)");
+                if (em.Success) error = Uri.UnescapeDataString(em.Groups[1].Value);
+                if (!sm.Success) error = error ?? "state_missing";
+                else if (Uri.UnescapeDataString(sm.Groups[1].Value) != expectedState) error = error ?? "state_mismatch";
+                if (cm.Success && error == null) code = Uri.UnescapeDataString(cm.Groups[1].Value);
+
+                string body = error == null
+                    ? "<!doctype html><html lang='ja'><head><meta charset='utf-8'><title>Headroom</title></head><body style='font-family:Segoe UI,sans-serif;text-align:center;padding-top:80px;color:#222;'><h2>Headroom ログイン完了</h2><p>このタブを閉じてください。</p></body></html>"
+                    : "<!doctype html><html lang='ja'><head><meta charset='utf-8'><title>Headroom</title></head><body style='font-family:Segoe UI,sans-serif;text-align:center;padding-top:80px;color:#b00;'><h2>Headroom ログイン失敗</h2><p>" + System.Net.WebUtility.HtmlEncode(error) + "</p></body></html>";
+                byte[] buf = System.Text.Encoding.UTF8.GetBytes(body);
+                ctx.Response.ContentType = "text/html; charset=utf-8";
+                ctx.Response.ContentLength64 = buf.Length;
+                await ctx.Response.OutputStream.WriteAsync(buf, 0, buf.Length);
+            }
+            finally
+            {
+                try { ctx.Response.Close(); } catch { }
+            }
+            if (code == null) throw new InvalidOperationException("OAuth error: " + (error ?? "no_code"));
+            return code;
+        }
+
+        static void WriteClaudeCredentials(string accessToken, string refreshToken, long expiresAtMs, string[] scopes)
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{\n  \"claudeAiOauth\": {\n");
+            sb.Append("    \"accessToken\": \"").Append(JsonEscape(accessToken ?? "")).Append("\",\n");
+            sb.Append("    \"refreshToken\": \"").Append(JsonEscape(refreshToken ?? "")).Append("\",\n");
+            sb.Append("    \"expiresAt\": ").Append(expiresAtMs).Append(",\n");
+            sb.Append("    \"scopes\": [");
+            if (scopes != null)
+            {
+                for (int i = 0; i < scopes.Length; i++)
+                {
+                    if (i > 0) sb.Append(", ");
+                    sb.Append('"').Append(JsonEscape(scopes[i])).Append('"');
+                }
+            }
+            sb.Append("]\n  }\n}\n");
+            File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
+        }
+
+        static void WriteCodexCredentials(string accessToken, string refreshToken, string accountId, long expiresAtMs)
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{\n  \"tokens\": {\n");
+            sb.Append("    \"access_token\": \"").Append(JsonEscape(accessToken ?? "")).Append("\"");
+            if (!string.IsNullOrEmpty(refreshToken))
+                sb.Append(",\n    \"refresh_token\": \"").Append(JsonEscape(refreshToken)).Append("\"");
+            if (!string.IsNullOrEmpty(accountId))
+                sb.Append(",\n    \"account_id\": \"").Append(JsonEscape(accountId)).Append("\"");
+            if (expiresAtMs > 0)
+                sb.Append(",\n    \"expires_at_ms\": ").Append(expiresAtMs);
+            sb.Append("\n  }\n}\n");
+            File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
+        }
+
+        static string JsonEscape(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            var sb = new System.Text.StringBuilder(s.Length + 8);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '"':  sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\b': sb.Append("\\b"); break;
+                    case '\f': sb.Append("\\f"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
         }
 
         static string ConvertIsoToLegacyFormat(string iso)
@@ -2085,12 +2292,12 @@ namespace Headroom
 
             locationsLabel = new Label
             {
-                Location = new Point(24, contentH + 10),
+                Location = new Point(24, contentH + 8),
                 Width = body.Width - 48,
-                Height = 34,
+                Height = 26,
                 Padding = new Padding(2, 0, 2, 0),
-                Font = new Font("Yu Gothic UI", 8.5f),
-                ForeColor = Color.FromArgb(120, 126, 142),
+                Font = new Font("Yu Gothic UI", 8f),
+                ForeColor = Color.FromArgb(100, 106, 120),
                 BackColor = Color.Transparent,
                 Cursor = Cursors.Hand
             };
@@ -2098,7 +2305,7 @@ namespace Headroom
             locationsLabel.Click += (s, e) => OpenSettingsLocation();
             body.Controls.Add(locationsLabel);
 
-            int totalContentH = locationsLabel.Bottom + 18;
+            int totalContentH = locationsLabel.Bottom + 10;
             scrollContainer.SetContentHeight(totalContentH);
             scrollContainer.AttachWheelToChildren();
 
