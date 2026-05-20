@@ -1200,9 +1200,15 @@ namespace Headroom
 
             if (IsCliAvailable(cliName))
             {
-                string cliCommand = service.Name == "Claude"
-                    ? "title Headroom - type /login to authenticate && claude"
-                    : "codex login";
+                string title  = T("Headroom: 認証後このウィンドウを閉じてOK",
+                                  "Headroom: close this window after sign-in");
+                string banner = service.Name == "Claude"
+                    ? T("[Headroom] /login と入力して認証してください。完了したらこのウィンドウは閉じてOKです。",
+                        "[Headroom] Type /login below to sign in. You can close this window once login completes.")
+                    : T("[Headroom] ブラウザで認証してください。完了したらこのウィンドウは閉じてOKです。",
+                        "[Headroom] A browser will open for sign-in. You can close this window once login completes.");
+                string cliExec = service.Name == "Claude" ? "claude" : "codex login";
+                string cliCommand = "chcp 65001 >nul && title " + title + " && echo. && echo " + banner + " && echo. && " + cliExec;
                 try
                 {
                     var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
@@ -1724,9 +1730,11 @@ namespace Headroom
                 if (!state.Data.HasAnyValue())
                 {
                     g.DrawString("--", num, white, x + 58, y + 54);
-                    string status = state.IsRefreshing ? T("更新中", "Updating") : StatusText(state.Status ?? state.Data.Status ?? "no_data");
+                    string effectiveStatus = state.Status ?? state.Data.Status ?? "no_data";
+                    string status = state.IsRefreshing ? T("更新中", "Updating") : StatusText(effectiveStatus);
                     g.DrawString(status, label, muted, x + 20, y + 88);
-                    DrawLoginButton(g, x + w - 100, y + h - 40, keyPrefix + "-login");
+                    if (NeedsLogin(effectiveStatus))
+                        DrawLoginButton(g, x + w - 100, y + h - 40, keyPrefix + "-login");
                     return;
                 }
 
@@ -1779,15 +1787,20 @@ namespace Headroom
             switch (status)
             {
                 case "updating": return T("更新中", "Updating");
-                case "fetch_error": return T("取得エラー", "Fetch error");
+                case "fetch_error": return T("一時的にAPIに接続できません", "Temporarily unreachable");
                 case "no_data": return T("データなし", "No data");
-                case "login_required": return T("ログインが必要", "Login required");
-                case "login_pending": return T("ログイン待ち...", "Signing in...");
+                case "login_required": return T("ログインしてください", "Please log in");
+                case "login_pending": return T("ログイン中…ブラウザで認証してください", "Signing in… complete it in your browser");
                 case "fixture_missing": return T("フィクスチャなし", "Fixture missing");
                 case "no_usage_text": return T("使用量テキストなし", "No usage text");
                 case "starting": return T("起動中", "Starting");
                 default: return status ?? T("データなし", "No data");
             }
+        }
+
+        static bool NeedsLogin(string status)
+        {
+            return status == "login_required" || status == "login_pending";
         }
 
         string LimitResetText(UsageData data, int? fiveRemain, int? weekRemain, bool english)
