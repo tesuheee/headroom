@@ -1159,7 +1159,7 @@ namespace Headroom
                 int secondY = firstY + rowHeight + rowGap;
                 bool fiveLockedByWeekly = weekRemain.HasValue && weekRemain.Value <= 0;
                 Color fiveAccent = fiveLockedByWeekly ? Color.FromArgb(58, 60, 68) : state.Accent;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly, T("週上限", "Weekly limit"));
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly);
                 DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
             }
         }
@@ -1258,7 +1258,7 @@ namespace Headroom
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false, string disabledBadge = null)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
@@ -1300,15 +1300,6 @@ namespace Headroom
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 14);
             DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
-            if (disabled && !string.IsNullOrEmpty(disabledBadge))
-            {
-                using (var badgeFont = new Font("Segoe UI", 8.2f, FontStyle.Bold))
-                {
-                    SizeF badgeSize = g.MeasureString(disabledBadge, badgeFont);
-                    int badgeW = (int)Math.Ceiling(badgeSize.Width) + 14;
-                    DrawBadge(g, disabledBadge, x + w - badgeW - 14, y + 1, Color.FromArgb(48, 50, 58), Color.FromArgb(132, 140, 156));
-                }
-            }
 
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
