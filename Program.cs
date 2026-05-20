@@ -77,6 +77,7 @@ namespace Headroom
         const string CodexOAuthClientId     = "app_EMoamEEZ73f0CkXaXp7hrann";
         const string CodexOAuthAuthorizeUrl = "https://auth.openai.com/oauth/authorize";
         const string CodexOAuthTokenUrl     = "https://auth.openai.com/oauth/token";
+        const string CodexOAuthScopes       = "openid profile email offline_access";
 
         const int PkceLoginTimeoutMs = 5 * 60 * 1000;
 
@@ -413,8 +414,9 @@ namespace Headroom
                     return;
                 }
 
-                string token, accountId;
-                if (!ReadCodexCredentials(out token, out accountId))
+                string token, refreshToken, accountId;
+                long expiresAtMs;
+                if (!ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs))
                 {
                     service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
                     service.Status = "login_required";
@@ -422,33 +424,51 @@ namespace Headroom
                     return;
                 }
 
-                using (var req = new HttpRequestMessage(HttpMethod.Get, "https://chatgpt.com/backend-api/wham/usage"))
+                // expires_at_ms が記録されており期限切れに近い場合は先取りリフレッシュ
+                if (expiresAtMs > 0 && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= expiresAtMs - 30000
+                    && !string.IsNullOrEmpty(refreshToken))
                 {
-                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                    req.Headers.UserAgent.ParseAdd("codex-cli");
-                    if (!string.IsNullOrEmpty(accountId))
-                        req.Headers.Add("ChatGPT-Account-Id", accountId);
-                    using (var resp = await httpClient.SendAsync(req))
+                    if (await TryRefreshCodexTokenAsync(refreshToken, accountId))
+                        ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs);
+                }
+
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    using (var req = new HttpRequestMessage(HttpMethod.Get, "https://chatgpt.com/backend-api/wham/usage"))
                     {
-                        int code = (int)resp.StatusCode;
-                        if (code == 401 || code == 403)
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                        req.Headers.UserAgent.ParseAdd("codex-cli");
+                        if (!string.IsNullOrEmpty(accountId))
+                            req.Headers.Add("ChatGPT-Account-Id", accountId);
+                        using (var resp = await httpClient.SendAsync(req))
                         {
-                            service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                            service.Status = "login_required";
+                            int code = (int)resp.StatusCode;
+                            if ((code == 401 || code == 403) && attempt == 0 && !string.IsNullOrEmpty(refreshToken)
+                                && await TryRefreshCodexTokenAsync(refreshToken, accountId)
+                                && ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs))
+                            {
+                                continue;
+                            }
+                            if (code == 401 || code == 403)
+                            {
+                                service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
+                                service.Status = "login_required";
+                                service.LastRefresh = DateTime.Now;
+                                return;
+                            }
+                            if (!resp.IsSuccessStatusCode)
+                            {
+                                service.Status = "fetch_error";
+                                WriteDebug("codex-api-error.txt", "HTTP " + code);
+                                return;
+                            }
+                            string json = await resp.Content.ReadAsStringAsync();
+                            WriteDebug("codex-api.txt", json);
+                            service.Data = ParseCodexApi(json);
+                            service.Status = service.Data.Status;
                             service.LastRefresh = DateTime.Now;
                             return;
                         }
-                        if (!resp.IsSuccessStatusCode)
-                        {
-                            service.Status = "fetch_error";
-                            WriteDebug("codex-api-error.txt", "HTTP " + code);
-                            return;
-                        }
-                        string json = await resp.Content.ReadAsStringAsync();
-                        WriteDebug("codex-api.txt", json);
-                        service.Data = ParseCodexApi(json);
-                        service.Status = service.Data.Status;
-                        service.LastRefresh = DateTime.Now;
                     }
                 }
             }
@@ -970,6 +990,169 @@ namespace Headroom
             }
         }
 
+        static string ExtractAccountIdFromIdToken(string idToken)
+        {
+            if (string.IsNullOrEmpty(idToken)) return null;
+            var parts = idToken.Split('.');
+            if (parts.Length < 2) return null;
+            try
+            {
+                string payload = parts[1].Replace('-', '+').Replace('_', '/');
+                int mod = payload.Length % 4;
+                if (mod > 0) payload += new string('=', 4 - mod);
+                byte[] bytes = Convert.FromBase64String(payload);
+                string json = System.Text.Encoding.UTF8.GetString(bytes);
+                string id = ExtractJsonString(json, "chatgpt_account_id");
+                if (!string.IsNullOrEmpty(id)) return id;
+                var m = Regex.Match(json, "\"https://api\\.openai\\.com/auth\"\\s*:\\s*\\{([^}]+)\\}");
+                if (m.Success)
+                {
+                    id = ExtractJsonString(m.Groups[1].Value, "chatgpt_account_id");
+                    if (!string.IsNullOrEmpty(id)) return id;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        async Task<bool> StartCodexPkceLoginAsync(ServiceState service)
+        {
+            string verifier = GeneratePkceVerifier();
+            string challenge = GeneratePkceChallenge(verifier);
+            string state = GeneratePkceVerifier();
+            int port;
+            try { port = GetFreeLocalPort(); }
+            catch (Exception ex) { WriteDebug("codex-pkce-error.txt", "port: " + ex); return false; }
+
+            string redirectUri = "http://localhost:" + port + "/callback";
+            var listener = new HttpListener();
+            listener.Prefixes.Add("http://localhost:" + port + "/");
+            try { listener.Start(); }
+            catch (Exception ex) { WriteDebug("codex-pkce-error.txt", "listener: " + ex); return false; }
+
+            string authorizeUrl = CodexOAuthAuthorizeUrl
+                + "?response_type=code"
+                + "&client_id=" + Uri.EscapeDataString(CodexOAuthClientId)
+                + "&redirect_uri=" + Uri.EscapeDataString(redirectUri)
+                + "&scope=" + Uri.EscapeDataString(CodexOAuthScopes)
+                + "&code_challenge=" + Uri.EscapeDataString(challenge)
+                + "&code_challenge_method=S256"
+                + "&state=" + Uri.EscapeDataString(state);
+
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(authorizeUrl) { UseShellExecute = true };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                try { listener.Close(); } catch { }
+                WriteDebug("codex-pkce-error.txt", "browser: " + ex);
+                return false;
+            }
+
+            string authCode;
+            try
+            {
+                authCode = await WaitForOAuthCallbackAsync(listener, state, PkceLoginTimeoutMs);
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("codex-pkce-error.txt", "callback: " + ex);
+                return false;
+            }
+            finally
+            {
+                try { listener.Close(); } catch { }
+            }
+
+            try
+            {
+                var formParams = new Dictionary<string, string>
+                {
+                    { "grant_type",    "authorization_code" },
+                    { "code",          authCode },
+                    { "redirect_uri",  redirectUri },
+                    { "client_id",     CodexOAuthClientId },
+                    { "code_verifier", verifier },
+                };
+                using (var content = new FormUrlEncodedContent(formParams))
+                using (var resp = await httpClient.PostAsync(CodexOAuthTokenUrl, content))
+                {
+                    string body = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        WriteDebug("codex-pkce-error.txt", "exchange " + (int)resp.StatusCode + ": " + body);
+                        return false;
+                    }
+                    string accessToken = ExtractJsonString(body, "access_token");
+                    string refreshToken = ExtractJsonString(body, "refresh_token");
+                    string idToken = ExtractJsonString(body, "id_token");
+                    long expiresIn = ExtractJsonLong(body, "expires_in");
+                    if (string.IsNullOrEmpty(accessToken))
+                    {
+                        WriteDebug("codex-pkce-error.txt", "missing access_token: " + body);
+                        return false;
+                    }
+                    string accountId = ExtractJsonString(body, "account_id")
+                                       ?? ExtractAccountIdFromIdToken(idToken);
+                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
+                    WriteCodexCredentials(accessToken, refreshToken, accountId, expiresAtMs);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("codex-pkce-error.txt", "exchange exception: " + ex);
+                return false;
+            }
+        }
+
+        async Task<bool> TryRefreshCodexTokenAsync(string refreshToken, string existingAccountId)
+        {
+            if (string.IsNullOrEmpty(refreshToken)) return false;
+            try
+            {
+                var formParams = new Dictionary<string, string>
+                {
+                    { "grant_type",    "refresh_token" },
+                    { "refresh_token", refreshToken },
+                    { "client_id",     CodexOAuthClientId },
+                };
+                using (var content = new FormUrlEncodedContent(formParams))
+                using (var resp = await httpClient.PostAsync(CodexOAuthTokenUrl, content))
+                {
+                    string body = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        WriteDebug("codex-refresh-error.txt", (int)resp.StatusCode + ": " + body);
+                        return false;
+                    }
+                    string accessToken = ExtractJsonString(body, "access_token");
+                    string newRefresh = ExtractJsonString(body, "refresh_token");
+                    string idToken = ExtractJsonString(body, "id_token");
+                    long expiresIn = ExtractJsonLong(body, "expires_in");
+                    if (string.IsNullOrEmpty(accessToken)) return false;
+                    string accountId = ExtractJsonString(body, "account_id")
+                                       ?? ExtractAccountIdFromIdToken(idToken)
+                                       ?? existingAccountId;
+                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
+                    lastCodexCredNotify = DateTime.Now;
+                    WriteCodexCredentials(accessToken,
+                        !string.IsNullOrEmpty(newRefresh) ? newRefresh : refreshToken,
+                        accountId, expiresAtMs);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("codex-refresh-error.txt", ex.ToString());
+                return false;
+            }
+        }
+
         async Task<bool> TryRefreshClaudeTokenAsync(string refreshToken)
         {
             if (string.IsNullOrEmpty(refreshToken)) return false;
@@ -1048,7 +1231,8 @@ namespace Headroom
             {
                 if (service.Name == "Claude")
                     ok = await StartClaudePkceLoginAsync(service);
-                // Codex はコミット 3 で実装
+                else
+                    ok = await StartCodexPkceLoginAsync(service);
             }
             catch (Exception ex)
             {
