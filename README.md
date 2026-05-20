@@ -21,9 +21,11 @@ A compact Windows desktop widget that shows how much Claude and Codex quota head
 
 1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
-3. On first launch, click **Login** on each card. A terminal window opens:
-   - **Claude**: type `/login` and follow the browser sign-in flow.
-   - **Codex**: the `codex login` browser flow starts automatically.
+3. On first launch, click **Login** on each card.
+   - **If Claude / Codex CLI is installed**, a terminal window opens for the CLI's login flow.
+     - **Claude**: type `/login` and follow the browser sign-in flow.
+     - **Codex**: the `codex login` browser flow starts automatically.
+   - **If no CLI is installed**, your default browser opens the OAuth login page directly. After signing in, the tab shows "Login complete" and Headroom picks up the new credentials automatically.
    You can also manage sessions from **Settings → Account**.
 
 ## Screens
@@ -90,8 +92,10 @@ Open with the ⚙ icon on the side rail.
 
 The app reads OAuth tokens from `%USERPROFILE%\.claude\.credentials.json` (Claude) and
 `%USERPROFILE%\.codex\auth.json` (Codex), calls the respective usage APIs directly, and
-renders a custom dark UI. Credentials are managed exclusively by the Claude Code CLI and
-Codex CLI - Headroom never writes to those files. Settings are stored in
+renders a custom dark UI. When a CLI is installed, Headroom defers credential writes to it.
+When no CLI is present, Headroom runs its own PKCE OAuth flow (system browser + localhost
+callback) and writes credentials in a CLI-compatible format. Refresh tokens are used to keep
+the access token alive without re-login. Settings are stored in
 `%LOCALAPPDATA%\Headroom\settings.json`.
 
 ## Fixture mode
