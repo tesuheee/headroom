@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
 $ExeName = "Headroom.exe"
 if ($DebugFixture) { $ExeName = "Headroom.fixture.exe" }
+elseif ($Version) { $ExeName = "Headroom-v$Version.exe" }
 $Exe = Join-Path $Out $ExeName
 $Source = Join-Path $PSScriptRoot "Program.cs"
 $CscArgs = @(
