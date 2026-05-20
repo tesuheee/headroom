@@ -227,10 +227,9 @@ namespace Headroom
 
         async Task RunScheduledRefreshAsync()
         {
-            bool anyNearReset =
-                (settings.ShowClaude && IsNearOrRecentReset(claude.Data)) ||
-                (settings.ShowCodex  && IsNearOrRecentReset(codex.Data));
-            schedulerTimer.Interval = anyNearReset ? 5000 : 10000;
+            bool anyVeryNear  = (settings.ShowClaude && IsVeryNearReset(claude.Data))    || (settings.ShowCodex && IsVeryNearReset(codex.Data));
+            bool anyNearReset = (settings.ShowClaude && IsNearOrRecentReset(claude.Data)) || (settings.ShowCodex && IsNearOrRecentReset(codex.Data));
+            schedulerTimer.Interval = anyVeryNear ? 5000 : (anyNearReset ? 5000 : 10000);
 
             if (settings.ShowCodex)  await MaybeRefreshAsync(codex);
             if (settings.ShowClaude) await MaybeRefreshAsync(claude);
@@ -253,8 +252,10 @@ namespace Headroom
                 service.BoostUntil = null;
 
             TimeSpan due;
-            if (IsNearOrRecentReset(service.Data))
-                due = TimeSpan.FromSeconds(Math.Max(5, settings.NearResetIntervalSeconds));
+            if (IsVeryNearReset(service.Data))
+                due = TimeSpan.FromSeconds(5);
+            else if (IsNearOrRecentReset(service.Data))
+                due = TimeSpan.FromSeconds(Math.Max(15, settings.NearResetIntervalSeconds));
             else
                 due = TimeSpan.FromMinutes(Math.Max(1, RefreshIntervalMinutes(service)));
 
@@ -281,6 +282,21 @@ namespace Headroom
                 if (TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
                     return true;
             }
+            return false;
+        }
+
+        static bool IsVeryNearReset(UsageData data)
+        {
+            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
+            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
+            if (!fiveEmpty && !weekEmpty) return false;
+            TimeSpan rem;
+            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset)
+                && TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
+                return true;
+            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset)
+                && TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
+                return true;
             return false;
         }
 
@@ -1001,7 +1017,8 @@ namespace Headroom
         {
             try
             {
-                var dto = DateTimeOffset.FromUnixTimeSeconds(unixSec);
+                long rounded = ((unixSec + 59) / 60) * 60;
+                var dto = DateTimeOffset.FromUnixTimeSeconds(rounded);
                 return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
             }
             catch { return null; }
@@ -1332,9 +1349,26 @@ namespace Headroom
             service.ManuallyLoggedOut = false;
             SetLoggedOutSetting(service, false);
             string cliName = service.Name == "Claude" ? "claude" : "codex";
+            string loginMethod = service.Name == "Claude" ? settings.ClaudeLoginMethod : settings.CodexLoginMethod;
 
-            if (IsCliAvailable(cliName))
+            bool useCli = string.Equals(loginMethod, "cli", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(loginMethod, "auto", StringComparison.OrdinalIgnoreCase) && IsCliAvailable(cliName));
+            bool useBrowser = string.Equals(loginMethod, "browser", StringComparison.OrdinalIgnoreCase) ||
+                (string.Equals(loginMethod, "auto", StringComparison.OrdinalIgnoreCase) && !IsCliAvailable(cliName));
+
+            if (useCli)
             {
+                if (!IsCliAvailable(cliName))
+                {
+                    service.Status = "login_required";
+                    Invalidate();
+                    MessageBox.Show(
+                        T("CLI が見つかりません。設定でログイン方法をブラウザOAuthに変更してください。",
+                          "CLI was not found. Change the login method to Browser OAuth in Settings."),
+                        "Headroom", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
                 string title  = T("Headroom: 認証後このウィンドウを閉じてOK",
                                   "Headroom: close this window after sign-in");
                 string banner = service.Name == "Claude"
@@ -1363,7 +1397,9 @@ namespace Headroom
                 return;
             }
 
-            // CLI 未インストール → PKCE フロー
+            if (!useBrowser)
+                useBrowser = true;
+
             service.Status = "login_pending";
             Invalidate();
 
@@ -1553,14 +1589,6 @@ namespace Headroom
                 return;
             }
 
-            if (IsResizeGrip(e.Location))
-            {
-                resizing = true;
-                resizeStartPoint = e.Location;
-                resizeStartSize = Size;
-                return;
-            }
-
             ReleaseCapture();
             SendMessage(Handle, WmNcLButtonDown, HtCaption, 0);
         }
@@ -1696,7 +1724,8 @@ namespace Headroom
 
             RegisterSideRailHits();
             string key = HitKey(p);
-            Cursor = key.Length > 0 ? Cursors.Hand : (IsResizeGrip(p) ? Cursors.SizeNWSE : Cursors.Default);
+            string silentKey = SilentHitKey(p);
+            Cursor = (key.Length > 0 || silentKey.Length > 0) ? Cursors.Hand : Cursors.Default;
             if (hoverKey == key) return;
             hoverKey = key;
             toolTip.Hide(this);
@@ -1730,14 +1759,6 @@ namespace Headroom
 
         void OnMouseMove(object sender, MouseEventArgs e)
         {
-            if (resizing)
-            {
-                Width = Math.Max(MinimumSize.Width, resizeStartSize.Width + e.X - resizeStartPoint.X);
-                Height = Math.Max(MinimumSize.Height, resizeStartSize.Height + e.Y - resizeStartPoint.Y);
-                Invalidate();
-                return;
-            }
-
             if (pendingSilentKey.Length > 0)
             {
                 Point screenNow = PointToScreen(e.Location);
@@ -1754,7 +1775,8 @@ namespace Headroom
             RegisterSideRailHits();
 
             string key = HitKey(e.Location);
-            Cursor = key.Length > 0 ? Cursors.Hand : (IsResizeGrip(e.Location) ? Cursors.SizeNWSE : Cursors.Default);
+            string sk = SilentHitKey(e.Location);
+            Cursor = (key.Length > 0 || sk.Length > 0) ? Cursors.Hand : Cursors.Default;
             if (hoverKey != key)
             {
                 hoverKey = key;
@@ -1876,11 +1898,11 @@ namespace Headroom
             RegisterSideRailHits();
 
             DrawIconButton(g, "close",     x, closeY,    Color.FromArgb(160, 160, 165), DrawCloseIcon);
-            DrawIconButton(g, "pin",       x, pinY,       settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
-            DrawIconButton(g, "token",     x, tokenY,     Color.FromArgb(130, 145, 165), DrawTokenToggleIcon);
-            DrawIconButton(g, "fiveReset", x, fiveY,      Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
-            DrawIconButton(g, "weekReset", x, weekY,      Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
-            DrawIconButton(g, "settings",  x, settingsY,  Color.FromArgb(130, 130, 135), DrawGearIcon);
+            DrawIconButton(g, "pin",       x, pinY,      settings.AlwaysOnTop ? Color.FromArgb(100, 180, 255) : Color.FromArgb(100, 100, 105), DrawPinIcon);
+            DrawIconButton(g, "token",     x, tokenY,    Color.FromArgb(130, 145, 165), DrawTokenToggleIcon);
+            DrawIconButton(g, "fiveReset", x, fiveY,     Color.FromArgb(110, 125, 145), DrawFiveResetIcon);
+            DrawIconButton(g, "weekReset", x, weekY,     Color.FromArgb(110, 125, 145), DrawWeekResetIcon);
+            DrawIconButton(g, "settings",  x, settingsY, Color.FromArgb(130, 130, 135), DrawGearIcon);
         }
 
         void RegisterSideRailHits()
@@ -2768,6 +2790,8 @@ namespace Headroom
         readonly DarkComboBox topMost   = new DarkComboBox();
         readonly DarkComboBox showCodex  = new DarkComboBox();
         readonly DarkComboBox showClaude = new DarkComboBox();
+        readonly DarkComboBox claudeLoginMethod = new DarkComboBox();
+        readonly DarkComboBox codexLoginMethod = new DarkComboBox();
         readonly DarkTextBox warningPercent = new DarkTextBox();
         readonly DarkTextBox criticalPercent = new DarkTextBox();
 
@@ -2911,6 +2935,8 @@ namespace Headroom
             AddRow(leftCard, "Codex 表示", "Codex display", "", "", showCodex,  ref leftY);
             AddRow(leftCard, "Claude 表示", "Claude display", "", "", showClaude, ref leftY);
             AddSection(leftCard, "アカウント", "Account", ref leftY);
+            AddRow(leftCard, "Claude ログイン方法", "Claude login method", "ブラウザOAuth / CLI", "Browser OAuth / CLI", claudeLoginMethod, ref leftY);
+            AddRow(leftCard, "Codex ログイン方法", "Codex login method", "ブラウザOAuth / CLI", "Browser OAuth / CLI", codexLoginMethod, ref leftY);
             AddAccountRow(leftCard, "Claude", claudeLoggedIn(), logoutClaude, ref leftY, true);
             AddAccountRow(leftCard, "Codex",  codexLoggedIn(),  logoutCodex,  ref leftY, false);
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
@@ -2934,6 +2960,8 @@ namespace Headroom
             SetupCombo(claudeMode, settings.ClaudeShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
             SetupCombo(fiveResetMode, settings.FiveHourResetMode, new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
             SetupCombo(weeklyResetMode, settings.WeeklyResetMode, new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
+            SetupCombo(claudeLoginMethod, settings.ClaudeLoginMethod, new[] { T("ブラウザOAuth", "Browser OAuth"), "CLI", T("自動", "Auto") });
+            SetupCombo(codexLoginMethod, settings.CodexLoginMethod, new[] { T("ブラウザOAuth", "Browser OAuth"), "CLI", T("自動", "Auto") });
             SetupCombo(language, settings.Language, new[] { "日本語", "English" });
             SetupNumbers();
 
@@ -2944,9 +2972,9 @@ namespace Headroom
 
             locationsLabel = new Label
             {
-                Location = new Point(24, contentH + 8),
+                Location = new Point(24, contentH + 4),
                 Width = body.Width - 48,
-                Height = 52,
+                Height = 48,
                 Padding = new Padding(2, 0, 2, 0),
                 Font = new Font("Yu Gothic UI", 8f),
                 ForeColor = Color.FromArgb(100, 106, 120),
@@ -2957,7 +2985,7 @@ namespace Headroom
             locationsLabel.Click += (s, e) => OpenSettingsLocation();
             body.Controls.Add(locationsLabel);
 
-            int totalContentH = locationsLabel.Bottom + 10;
+            int totalContentH = locationsLabel.Bottom + 4;
             scrollContainer.SetContentHeight(totalContentH);
             scrollContainer.AttachWheelToChildren();
 
@@ -3226,9 +3254,17 @@ namespace Headroom
             if (box == layoutMode)                              box.SelectedIndex = string.Equals(value, "vertical",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            else if (box == claudeLoginMethod || box == codexLoginMethod) box.SelectedIndex = LoginMethodIndex(value);
             else if (box == topMost)                           box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == showCodex || box == showClaude)   box.SelectedIndex = string.Equals(value, "enabled",   StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             else if (box == language)                          box.SelectedIndex = string.Equals(value, "en",        StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        }
+
+        static int LoginMethodIndex(string value)
+        {
+            if (string.Equals(value, "cli", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase)) return 2;
+            return 0;
         }
 
         void SetupNumbers()
@@ -3315,6 +3351,8 @@ namespace Headroom
             boostInterval.TextChanged += apply;
             showCodex.SelectedIndexChanged  += apply;
             showClaude.SelectedIndexChanged += apply;
+            claudeLoginMethod.SelectedIndexChanged += apply;
+            codexLoginMethod.SelectedIndexChanged += apply;
             layoutMode.SelectedIndexChanged += apply;
             codexMode.SelectedIndexChanged += apply;
             claudeMode.SelectedIndexChanged += apply;
@@ -3335,6 +3373,8 @@ namespace Headroom
             int topMostSel  = topMost.SelectedIndex;
             int showCxSel   = showCodex.SelectedIndex;
             int showClSel   = showClaude.SelectedIndex;
+            int claudeLoginSel = claudeLoginMethod.SelectedIndex;
+            int codexLoginSel  = codexLoginMethod.SelectedIndex;
 
             layoutMode.Items.Clear();
             layoutMode.Items.AddRange(new[] { T("横", "Wide"), T("縦", "Tall") });
@@ -3367,6 +3407,14 @@ namespace Headroom
             showClaude.Items.Clear();
             showClaude.Items.AddRange(new[] { T("有効", "Enabled"), T("無効", "Disabled") });
             showClaude.SelectedIndex = Math.Max(0, Math.Min(1, showClSel));
+
+            claudeLoginMethod.Items.Clear();
+            claudeLoginMethod.Items.AddRange(new[] { T("ブラウザOAuth", "Browser OAuth"), "CLI", T("自動", "Auto") });
+            claudeLoginMethod.SelectedIndex = Math.Max(0, Math.Min(2, claudeLoginSel));
+
+            codexLoginMethod.Items.Clear();
+            codexLoginMethod.Items.AddRange(new[] { T("ブラウザOAuth", "Browser OAuth"), "CLI", T("自動", "Auto") });
+            codexLoginMethod.SelectedIndex = Math.Max(0, Math.Min(2, codexLoginSel));
         }
 
         void UpdateTaggedControls(Control parent, bool en)
@@ -3394,6 +3442,8 @@ namespace Headroom
             if (showCodex.SelectedIndex == 1 && showClaude.SelectedIndex == 1) showClaude.SelectedIndex = 0;
             settings.ShowCodex  = showCodex.SelectedIndex  == 0;
             settings.ShowClaude = showClaude.SelectedIndex == 0;
+            settings.ClaudeLoginMethod = LoginMethodValue(claudeLoginMethod.SelectedIndex);
+            settings.CodexLoginMethod = LoginMethodValue(codexLoginMethod.SelectedIndex);
             settings.LayoutMode = layoutMode.SelectedIndex == 1 ? "vertical" : "horizontal";
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
@@ -3404,6 +3454,13 @@ namespace Headroom
             settings.WarningRemainingPercent = Math.Max(critical, warning);
             settings.CriticalRemainingPercent = Math.Min(critical, settings.WarningRemainingPercent);
             settings.AlwaysOnTop = topMost.SelectedIndex == 0;
+        }
+
+        static string LoginMethodValue(int selectedIndex)
+        {
+            if (selectedIndex == 1) return "cli";
+            if (selectedIndex == 2) return "auto";
+            return "browser";
         }
 
         string T(string ja, string en)
@@ -3525,6 +3582,8 @@ namespace Headroom
         public bool ClaudeShowUsed = false;
         public bool CodexLoggedOut = false;
         public bool ClaudeLoggedOut = false;
+        public string CodexLoginMethod = "browser";
+        public string ClaudeLoginMethod = "browser";
         public string FiveHourResetMode = "relative";
         public string WeeklyResetMode = "time";
         public int WarningRemainingPercent = 50;
@@ -3592,6 +3651,8 @@ namespace Headroom
                 s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
                 s.CodexLoggedOut = ReadBool(json, "codexLoggedOut", s.CodexLoggedOut);
                 s.ClaudeLoggedOut = ReadBool(json, "claudeLoggedOut", s.ClaudeLoggedOut);
+                s.CodexLoginMethod = NormalizeLoginMethod(ReadString(json, "codexLoginMethod", s.CodexLoginMethod));
+                s.ClaudeLoginMethod = NormalizeLoginMethod(ReadString(json, "claudeLoginMethod", s.ClaudeLoginMethod));
                 s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
                 s.WeeklyResetMode = NormalizeResetMode(ReadString(json, "weeklyResetMode", s.WeeklyResetMode));
                 s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
@@ -3625,6 +3686,8 @@ namespace Headroom
             ClaudeShowUsed = other.ClaudeShowUsed;
             CodexLoggedOut = other.CodexLoggedOut;
             ClaudeLoggedOut = other.ClaudeLoggedOut;
+            CodexLoginMethod = other.CodexLoginMethod;
+            ClaudeLoginMethod = other.ClaudeLoginMethod;
             FiveHourResetMode = other.FiveHourResetMode;
             WeeklyResetMode = other.WeeklyResetMode;
             WarningRemainingPercent = other.WarningRemainingPercent;
@@ -3658,6 +3721,8 @@ namespace Headroom
                     "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
                     "  \"codexLoggedOut\": " + (CodexLoggedOut ? "true" : "false") + ",\r\n" +
                     "  \"claudeLoggedOut\": " + (ClaudeLoggedOut ? "true" : "false") + ",\r\n" +
+                    "  \"codexLoginMethod\": \"" + Escape(CodexLoginMethod) + "\",\r\n" +
+                    "  \"claudeLoginMethod\": \"" + Escape(ClaudeLoginMethod) + "\",\r\n" +
                     "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
                     "  \"weeklyResetMode\": \"" + Escape(WeeklyResetMode) + "\",\r\n" +
                     "  \"warningRemainingPercent\": " + WarningRemainingPercent + ",\r\n" +
@@ -3697,6 +3762,13 @@ namespace Headroom
         static string NormalizeLayoutMode(string value)
         {
             return string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
+        }
+
+        static string NormalizeLoginMethod(string value)
+        {
+            if (string.Equals(value, "cli", StringComparison.OrdinalIgnoreCase)) return "cli";
+            if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase)) return "auto";
+            return "browser";
         }
 
         static string Escape(string value)
