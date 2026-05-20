@@ -1,14 +1,21 @@
-param([string]$Version = "")
+param(
+  [string]$Version = "",
+  [switch]$DebugFixture = $false
+)
 
 $ErrorActionPreference = "Stop"
 
-$Out = Join-Path $PSScriptRoot "bin"
+$OutDirName = "bin"
+if ($DebugFixture) { $OutDirName = "debug" }
+$Out = Join-Path $PSScriptRoot $OutDirName
 $Csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $Icon = Join-Path $PSScriptRoot "app.ico"
 
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
-$Exe = Join-Path $Out "Headroom.exe"
+$ExeName = "Headroom.exe"
+if ($DebugFixture) { $ExeName = "Headroom.fixture.exe" }
+$Exe = Join-Path $Out $ExeName
 $Source = Join-Path $PSScriptRoot "Program.cs"
 $CscArgs = @(
   "/nologo",

@@ -1,5 +1,6 @@
 packages/
 bin/
+debug/
 obj/
 releases/
 design/
@@ -10,3 +11,4 @@ design/
 settings.json
 
 .cert-thumbprint
+.claude/

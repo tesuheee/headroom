@@ -92,6 +92,19 @@ renders a custom dark UI. Credentials are managed exclusively by the Claude Code
 Codex CLI - Headroom never writes to those files. Settings are stored in
 `%LOCALAPPDATA%\Headroom\settings.json`.
 
+## Fixture mode
+
+For UI verification without spending quota, start Headroom with a fixture folder:
+
+```powershell
+.\build.ps1 -DebugFixture
+.\debug\Headroom.fixture.exe --fixture .\docs\fixtures\03-weekly-exhausted
+```
+
+The folder must contain `claude.json` and `codex.json` in the same shape as the live API
+responses. Headroom watches those files and refreshes automatically when they change.
+Sample scenarios live under `docs/fixtures/`.
+
 ## Build from source
 
 ```powershell

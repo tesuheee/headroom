@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -19,9 +20,47 @@ namespace Headroom
         [STAThread]
         static void Main()
         {
+            HeadroomOptions.Configure(Environment.GetCommandLineArgs());
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new UsageForm());
+        }
+    }
+
+    static class HeadroomOptions
+    {
+        public static bool FixtureMode { get; private set; }
+        public static string FixtureDir { get; private set; }
+
+        public static void Configure(string[] args)
+        {
+            FixtureDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom-fixture");
+
+            string envDir = Environment.GetEnvironmentVariable("HEADROOM_FIXTURE_DIR");
+            if (!string.IsNullOrWhiteSpace(envDir))
+            {
+                FixtureMode = true;
+                FixtureDir = envDir.Trim();
+            }
+
+            for (int i = 1; i < args.Length; i++)
+            {
+                string arg = args[i] ?? "";
+                if (arg.Equals("--fixture", StringComparison.OrdinalIgnoreCase))
+                {
+                    FixtureMode = true;
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                        FixtureDir = args[++i];
+                }
+                else if (arg.StartsWith("--fixture=", StringComparison.OrdinalIgnoreCase))
+                {
+                    FixtureMode = true;
+                    FixtureDir = arg.Substring("--fixture=".Length).Trim('"');
+                }
+            }
+
+            if (!Path.IsPathRooted(FixtureDir))
+                FixtureDir = Path.GetFullPath(FixtureDir);
         }
     }
 
@@ -54,8 +93,10 @@ namespace Headroom
         static readonly HttpClient httpClient;
         FileSystemWatcher claudeCredWatcher;
         FileSystemWatcher codexCredWatcher;
+        FileSystemWatcher fixtureWatcher;
         DateTime lastClaudeCredNotify = DateTime.MinValue;
         DateTime lastCodexCredNotify = DateTime.MinValue;
+        DateTime lastFixtureNotify = DateTime.MinValue;
         ServiceState claude = new ServiceState("Claude", ClaudeUrl, Color.FromArgb(45, 132, 235));
         ServiceState codex = new ServiceState("Codex", CodexUrl, Color.FromArgb(26, 177, 92));
 
@@ -92,7 +133,8 @@ namespace Headroom
             KeyPreview = true;
             ShowInTaskbar = true;
 
-            SetupCredentialWatchers();
+            if (HeadroomOptions.FixtureMode) SetupFixtureWatcher();
+            else SetupCredentialWatchers();
 
             MouseDown += OnMouseDown;
             MouseMove += OnMouseMove;
@@ -267,6 +309,12 @@ namespace Headroom
             Invalidate();
             try
             {
+                if (HeadroomOptions.FixtureMode)
+                {
+                    LoadFixture(service, "Claude", "claude.json", ParseClaudeApi);
+                    return;
+                }
+
                 string token;
                 long expiresAtMs;
                 if (!ReadClaudeCredentials(out token, out expiresAtMs))
@@ -332,6 +380,12 @@ namespace Headroom
             Invalidate();
             try
             {
+                if (HeadroomOptions.FixtureMode)
+                {
+                    LoadFixture(service, "Codex", "codex.json", ParseCodexApi);
+                    return;
+                }
+
                 string token, accountId;
                 if (!ReadCodexCredentials(out token, out accountId))
                 {
@@ -381,6 +435,44 @@ namespace Headroom
                 service.IsRefreshing = false;
                 Invalidate();
             }
+        }
+
+        static void LoadFixture(ServiceState service, string name, string fileName, Func<string, UsageData> parser)
+        {
+            string path = Path.Combine(HeadroomOptions.FixtureDir, fileName);
+            if (!File.Exists(path))
+            {
+                service.Data = new UsageData
+                {
+                    Name = name,
+                    Source = "Fixture",
+                    UpdatedAt = DateTime.Now,
+                    Status = "fixture_missing"
+                };
+                service.Status = "fixture_missing";
+                service.LastRefresh = DateTime.Now;
+                return;
+            }
+
+            string json = File.ReadAllText(path);
+            if (Regex.IsMatch(json, "\"status\"\\s*:\\s*\"login_required\"", RegexOptions.IgnoreCase))
+            {
+                service.Data = new UsageData
+                {
+                    Name = name,
+                    Source = "Fixture",
+                    UpdatedAt = DateTime.Now,
+                    Status = "login_required"
+                };
+            }
+            else
+            {
+                service.Data = parser(json);
+                service.Data.Name = name;
+                service.Data.Source = "Fixture";
+            }
+            service.Status = service.Data.Status;
+            service.LastRefresh = DateTime.Now;
         }
 
         static UsageData ParseClaudeApi(string json)
@@ -624,6 +716,27 @@ namespace Headroom
             }
         }
 
+        void SetupFixtureWatcher()
+        {
+            try
+            {
+                Directory.CreateDirectory(HeadroomOptions.FixtureDir);
+                fixtureWatcher = new FileSystemWatcher(HeadroomOptions.FixtureDir, "*.json")
+                {
+                    NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.Size,
+                    EnableRaisingEvents = true,
+                };
+                fixtureWatcher.Changed += (s, e) => OnFixtureChanged();
+                fixtureWatcher.Created += (s, e) => OnFixtureChanged();
+                fixtureWatcher.Deleted += (s, e) => OnFixtureChanged();
+                fixtureWatcher.Renamed += (s, e) => OnFixtureChanged();
+            }
+            catch (Exception ex)
+            {
+                WriteDebug("watcher-fixture-error.txt", ex.ToString());
+            }
+        }
+
         void OnClaudeCredentialChanged()
         {
             if ((DateTime.Now - lastClaudeCredNotify).TotalSeconds < 1) return;
@@ -650,6 +763,17 @@ namespace Headroom
                     codex.ManuallyLoggedOut = false;
                     await RefreshCodexViaApiAsync(codex, true);
                 }));
+            }
+            catch { }
+        }
+
+        void OnFixtureChanged()
+        {
+            if ((DateTime.Now - lastFixtureNotify).TotalMilliseconds < 500) return;
+            lastFixtureNotify = DateTime.Now;
+            try
+            {
+                BeginInvoke(new Action(async () => await RefreshAllAsync(true)));
             }
             catch { }
         }
@@ -1033,7 +1157,9 @@ namespace Headroom
                 int rowGap = Math.Max(2, Math.Min(10, free / 4));
                 int firstY = contentTop + topPad;
                 int secondY = firstY + rowHeight + rowGap;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel");
+                bool fiveLockedByWeekly = weekRemain.HasValue && weekRemain.Value <= 0;
+                Color fiveAccent = fiveLockedByWeekly ? Color.FromArgb(58, 60, 68) : state.Accent;
+                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly, T("週上限", "Weekly limit"));
                 DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
             }
         }
@@ -1075,6 +1201,7 @@ namespace Headroom
                 case "no_data": return T("データなし", "No data");
                 case "login_required": return T("ログインが必要", "Login required");
                 case "login_pending": return T("ログイン待ち...", "Signing in...");
+                case "fixture_missing": return T("フィクスチャなし", "Fixture missing");
                 case "no_usage_text": return T("使用量テキストなし", "No usage text");
                 case "starting": return T("起動中", "Starting");
                 default: return status ?? T("データなし", "No data");
@@ -1131,15 +1258,19 @@ namespace Headroom
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false, string disabledBadge = null)
         {
             bool empty = !pct.HasValue;
             bool limit = pct.HasValue && (showUsed ? 100 - pct.Value : pct.Value) <= settings.CriticalRemainingPercent;
             bool atLimit = pct.HasValue && (showUsed ? pct.Value >= 100 : pct.Value <= 0);
             bool warning = pct.HasValue && !limit && (showUsed ? 100 - pct.Value : pct.Value) <= settings.WarningRemainingPercent;
-            Color rowColor = RowColor(pct, showUsed, accent);
-            Color numColor = Color.FromArgb(240, 242, 248);
+            Color rowColor = disabled ? Color.FromArgb(88, 92, 104) : RowColor(pct, showUsed, accent);
+            Color numColor = disabled ? Color.FromArgb(130, 136, 150) : Color.FromArgb(240, 242, 248);
+            Color labelColor = disabled ? Color.FromArgb(120, 126, 140) : Color.FromArgb(210, 215, 228);
+            Color dimColor = disabled ? Color.FromArgb(105, 111, 124) : Color.FromArgb(185, 190, 205);
             using (var pctBrush = new SolidBrush(numColor))
+            using (var labelBrush = new SolidBrush(labelColor))
+            using (var dimBrush = new SolidBrush(dimColor))
             {
             int labelX = x + 12;
             int label5hW = (int)Math.Ceiling(g.MeasureString(T("5時間", "5h"), labelFont).Width);
@@ -1152,10 +1283,10 @@ namespace Headroom
             int modeX = labelX + maxLabelW + 2;
             int percentX = modeX + modeColW + 2;
             int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
-            g.DrawString(label, labelFont, muted, labelX, labelY);
+            g.DrawString(label, labelFont, labelBrush, labelX, labelY);
             if (hitMode != null)
                 silentHits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
-            g.DrawString(modeText, labelFont, dim, modeX, labelY);
+            g.DrawString(modeText, labelFont, dimBrush, modeX, labelY);
             string pctStr = empty ? "--" : pct.Value + "%";
             int pctColW = Math.Max(44, (int)Math.Ceiling(g.MeasureString("100%", numFont).Width));
             using (var pctFormat = new StringFormat())
@@ -1169,6 +1300,15 @@ namespace Headroom
             int barY = y + Math.Max(5, (int)Math.Round(PercentFontSize * 0.42));
             int barW = Math.Max(70, w - (barX - x) - 14);
             DrawBar(g, barX, barY, barW, 9, barPct, rowColor);
+            if (disabled && !string.IsNullOrEmpty(disabledBadge))
+            {
+                using (var badgeFont = new Font("Segoe UI", 8.2f, FontStyle.Bold))
+                {
+                    SizeF badgeSize = g.MeasureString(disabledBadge, badgeFont);
+                    int badgeW = (int)Math.Ceiling(badgeSize.Width) + 14;
+                    DrawBadge(g, disabledBadge, x + w - badgeW - 14, y + 1, Color.FromArgb(48, 50, 58), Color.FromArgb(132, 140, 156));
+                }
+            }
 
             string reset = notStarted ? T("未開始", "Not started") : ResetText(resetText, resetMode, English, weekly);
             if (!string.IsNullOrEmpty(reset))
@@ -1179,11 +1319,11 @@ namespace Headroom
                     SizeF resetSz = g.MeasureString(reset, resetFont);
                     silentHits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
                 }
-                if (atLimit)
+                if (atLimit && !disabled)
                     using (var boldReset = new Font(resetFont, FontStyle.Bold))
                         g.DrawString(reset, boldReset, white, barX, resetY);
                 else
-                    g.DrawString(reset, resetFont, dim, barX, resetY);
+                    g.DrawString(reset, resetFont, dimBrush, barX, resetY);
             }
             }
         }
@@ -1684,7 +1824,8 @@ namespace Headroom
                 () => claude.Data.Status != "login_required",
                 () => codex.Data.Status != "login_required",
                 () => LogoutServiceAsync(claude),
-                () => LogoutServiceAsync(codex)
+                () => LogoutServiceAsync(codex),
+                HeadroomOptions.FixtureMode
             ))
             {
                 dlg.ShowDialog(this);
@@ -1722,9 +1863,14 @@ namespace Headroom
 
         static void WriteDebug(string name, string text)
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom");
+            string dir = DebugDirectory;
             Directory.CreateDirectory(dir);
             File.WriteAllText(Path.Combine(dir, name), text ?? "");
+        }
+
+        internal static string DebugDirectory
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom"); }
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -1749,8 +1895,10 @@ namespace Headroom
         readonly WidgetSettings original;
         readonly Action preview;
         readonly ToolTip tooltips = new ToolTip();
+        readonly bool fixtureMode;
         bool _updatingLanguage;
         DarkScrollContainer scrollContainer;
+        Label locationsLabel;
         bool _resizing;
         Point _resizeStart;
         Size  _resizeStartSize;
@@ -1783,7 +1931,8 @@ namespace Headroom
 
         public SettingsForm(WidgetSettings settings, Action preview,
             Func<bool> claudeLoggedIn, Func<bool> codexLoggedIn,
-            Func<Task> logoutClaude, Func<Task> logoutCodex)
+            Func<Task> logoutClaude, Func<Task> logoutCodex,
+            bool fixtureMode)
         {
             this.settings = settings;
             this.original = settings.Clone();
@@ -1792,6 +1941,7 @@ namespace Headroom
             this.codexLoggedIn  = codexLoggedIn;
             this.logoutClaude   = logoutClaude;
             this.logoutCodex    = logoutCodex;
+            this.fixtureMode = fixtureMode;
             Text = T("設定", "Settings");
             Width = 880;
             Height = Math.Min(640, Screen.PrimaryScreen.WorkingArea.Height - 80);
@@ -1815,6 +1965,22 @@ namespace Headroom
                 BackColor = Color.Transparent
             };
             Controls.Add(title);
+
+            if (fixtureMode)
+            {
+                var fixtureBadge = new Label
+                {
+                    Text = "FIXTURE",
+                    Location = new Point(112, 20),
+                    Width = 74,
+                    Height = 18,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = new Font("Yu Gothic UI", 8f, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(170, 210, 255),
+                    BackColor = Color.FromArgb(28, 50, 76)
+                };
+                Controls.Add(fixtureBadge);
+            }
 
             var cancel = new RoundButton {
                 Text = T("キャンセル", "Cancel"), Tag = "キャンセル|Cancel",
@@ -1925,11 +2091,28 @@ namespace Headroom
             leftCard.Height = contentH;
             rightCard.Height = contentH;
             vDivider.Height = contentH;
-            scrollContainer.SetContentHeight(contentH);
+
+            locationsLabel = new Label
+            {
+                Location = new Point(24, contentH + 10),
+                Width = body.Width - 48,
+                Height = 34,
+                Padding = new Padding(2, 0, 2, 0),
+                Font = new Font("Yu Gothic UI", 8.5f),
+                ForeColor = Color.FromArgb(120, 126, 142),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Hand
+            };
+            UpdateLocationsLabel();
+            locationsLabel.Click += (s, e) => OpenSettingsLocation();
+            body.Controls.Add(locationsLabel);
+
+            int totalContentH = locationsLabel.Bottom + 18;
+            scrollContainer.SetContentHeight(totalContentH);
             scrollContainer.AttachWheelToChildren();
 
             // ウィンドウ高をコンテンツに合わせて隙間をなくす
-            int idealFormH = Math.Min(Screen.PrimaryScreen.WorkingArea.Height - 80, contentH + 57);
+            int idealFormH = Math.Min(Screen.PrimaryScreen.WorkingArea.Height - 80, totalContentH + 57);
             Height = idealFormH;
             scrollContainer.Size = new Size(Width, Height - 57);
 
@@ -2051,12 +2234,17 @@ namespace Headroom
 
             Color signedInColor  = Color.FromArgb(140, 210, 160);
             Color signedOutColor = Color.FromArgb(160, 140, 120);
+            string statusText = T(serviceName + "：" + (loggedIn ? "ログイン中" : "未ログイン"),
+                                  serviceName + ": " + (loggedIn ? "Signed in" : "Not signed in"));
+            if (!loggedIn)
+                statusText += isClaude
+                    ? T("\n/login でサインイン", "\nType /login to sign in")
+                    : T("\nブラウザで自動サインイン", "\nBrowser sign-in starts");
             var statusLabel = new Label
             {
-                Text = T(serviceName + "：" + (loggedIn ? "ログイン中" : "未ログイン"),
-                         serviceName + ": " + (loggedIn ? "Signed in" : "Not signed in")),
-                Location = new Point(24, y + 15),
-                Width = 220, Height = 20,
+                Text = statusText,
+                Location = new Point(24, loggedIn ? y + 15 : y + 7),
+                Width = 260, Height = loggedIn ? 20 : 38,
                 Font = new Font("Yu Gothic UI", 9.2f),
                 ForeColor = loggedIn ? signedInColor : signedOutColor
             };
@@ -2227,6 +2415,26 @@ namespace Headroom
             box.BorderStyle = BorderStyle.FixedSingle;
         }
 
+        void UpdateLocationsLabel()
+        {
+            if (locationsLabel == null) return;
+            locationsLabel.Text =
+                T("設定ファイル: ", "Settings: ") + WidgetSettings.SettingsPath + "\r\n" +
+                T("ログ: ", "Logs: ") + UsageForm.DebugDirectory;
+            tooltips.SetToolTip(locationsLabel, T("クリックで設定ファイルを選択表示", "Click to reveal the settings file"));
+        }
+
+        void OpenSettingsLocation()
+        {
+            try
+            {
+                Directory.CreateDirectory(WidgetSettings.SettingsDirectory);
+                if (!File.Exists(WidgetSettings.SettingsPath)) settings.Save();
+                Process.Start("explorer.exe", "/select,\"" + WidgetSettings.SettingsPath + "\"");
+            }
+            catch { }
+        }
+
         void WireLivePreview()
         {
             EventHandler apply = (s, e) =>
@@ -2245,6 +2453,7 @@ namespace Headroom
                     bool en = string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase);
                     ReloadComboItems();
                     UpdateTaggedControls(this, en);
+                    UpdateLocationsLabel();
                     preview();
                 }
                 finally { _updatingLanguage = false; }
@@ -2467,7 +2676,7 @@ namespace Headroom
         public int WarningRemainingPercent = 50;
         public int CriticalRemainingPercent = 30;
 
-        static string SettingsPath
+        internal static string SettingsPath
         {
             get
             {
@@ -2478,6 +2687,11 @@ namespace Headroom
             }
         }
 
+        internal static string SettingsDirectory
+        {
+            get { return Path.GetDirectoryName(SettingsPath); }
+        }
+
         static string LegacySettingsPath
         {
             get { return Path.Combine(Application.StartupPath, "settings.json"); }
@@ -2485,9 +2699,7 @@ namespace Headroom
 
         static string DefaultLanguage()
         {
-            return string.Equals(System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName, "ja", StringComparison.OrdinalIgnoreCase)
-                ? "ja"
-                : "en";
+            return "en";
         }
 
         public static WidgetSettings Load()

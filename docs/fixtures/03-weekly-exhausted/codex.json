@@ -1,0 +1,10 @@
+{
+  "primary_window": {
+    "used_percent": 50,
+    "reset_at": 1779300000
+  },
+  "secondary_window": {
+    "used_percent": 100,
+    "reset_at": 1779645600
+  }
+}
