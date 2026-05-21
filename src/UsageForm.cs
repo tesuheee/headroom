@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -274,23 +273,23 @@ namespace Headroom
             service.LastRefresh = DateTime.Now;
         }
 
-        static void ApplyRateLimit(ServiceState service, HttpResponseMessage resp, string debugName, int code)
+        void ApplyFetchResult(ServiceState service, UsageFetchResult result)
         {
-            DateTime until = RateLimitUntil(resp);
-            service.RateLimitedUntil = until;
-            service.Status = "rate_limited";
+            if (!string.IsNullOrEmpty(result.DebugName))
+                WriteDebug(result.DebugName, result.DebugText);
+            if (result.Data != null)
+                service.Data = result.Data;
+            service.Status = result.Status ?? (service.Data == null ? "fetch_error" : service.Data.Status);
+            if (result.RateLimitedUntil.HasValue)
+            {
+                service.RateLimitedUntil = result.RateLimitedUntil;
+                service.Status = "rate_limited";
+            }
+            else if (service.Status != "fetch_error")
+            {
+                service.RateLimitedUntil = null;
+            }
             service.LastRefresh = DateTime.Now;
-
-            string retryAfter = resp.Headers.RetryAfter == null ? "" : resp.Headers.RetryAfter.ToString();
-            WriteDebug(debugName,
-                "HTTP " + code + "\r\n" +
-                "Retry-After: " + retryAfter + "\r\n" +
-                "Backoff until: " + until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
-        }
-
-        static DateTime RateLimitUntil(HttpResponseMessage resp)
-        {
-            return RefreshPolicy.RateLimitUntil(resp, DateTime.Now);
         }
 
         static string TryReadFileWithRetry(string path)

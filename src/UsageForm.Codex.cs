@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
 
 namespace Headroom
@@ -45,11 +43,6 @@ namespace Headroom
             return true;
         }
 
-        static string ReadCodexIdToken()
-        {
-            return CodexCredentialStore.ReadIdToken(CodexCredentialPath);
-        }
-
         static void WriteCodexCredentials(string accessToken, string refreshToken, string idToken, string accountId, long expiresAtMs)
         {
             CodexCredentialStore.Write(CodexCredentialPath, new CodexCredentials
@@ -60,28 +53,6 @@ namespace Headroom
                 AccountId = accountId,
                 ExpiresAtMs = expiresAtMs
             });
-        }
-
-        static string ExtractAccountIdFromIdToken(string idToken)
-        {
-            if (string.IsNullOrEmpty(idToken)) return null;
-            var parts = idToken.Split('.');
-            if (parts.Length < 2) return null;
-            try
-            {
-                string payload = parts[1].Replace('-', '+').Replace('_', '/');
-                int mod = payload.Length % 4;
-                if (mod > 0) payload += new string('=', 4 - mod);
-                byte[] bytes = Convert.FromBase64String(payload);
-                string json = System.Text.Encoding.UTF8.GetString(bytes);
-                var claims = Json.ParseObject(json);
-                string id = Json.String(claims, "chatgpt_account_id");
-                if (!string.IsNullOrEmpty(id)) return id;
-                id = Json.String(Json.Object(claims, "https://api.openai.com/auth"), "chatgpt_account_id");
-                if (!string.IsNullOrEmpty(id)) return id;
-            }
-            catch { }
-            return null;
         }
 
         async Task RefreshCodexViaApiAsync(ServiceState service, bool manual)
@@ -104,69 +75,9 @@ namespace Headroom
                     return;
                 }
 
-                string token, refreshToken, accountId;
-                long expiresAtMs;
-                if (!ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs))
-                {
-                    service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                    service.Status = "login_required";
-                    service.LastRefresh = DateTime.Now;
-                    return;
-                }
-
-                if (expiresAtMs > 0 && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= expiresAtMs - 30000
-                    && !string.IsNullOrEmpty(refreshToken))
-                {
-                    if (await TryRefreshCodexTokenAsync(refreshToken, accountId))
-                        ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs);
-                }
-
-                for (int attempt = 0; attempt < 2; attempt++)
-                {
-                    using (var req = new HttpRequestMessage(HttpMethod.Get, "https://chatgpt.com/backend-api/wham/usage"))
-                    {
-                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                        req.Headers.UserAgent.ParseAdd("codex-cli");
-                        if (!string.IsNullOrEmpty(accountId))
-                            req.Headers.Add("ChatGPT-Account-Id", accountId);
-                        using (var resp = await httpClient.SendAsync(req))
-                        {
-                            int code = (int)resp.StatusCode;
-                            if ((code == 401 || code == 403) && attempt == 0 && !string.IsNullOrEmpty(refreshToken)
-                                && await TryRefreshCodexTokenAsync(refreshToken, accountId)
-                                && ReadCodexCredentials(out token, out refreshToken, out accountId, out expiresAtMs))
-                            {
-                                continue;
-                            }
-                            if (code == 401 || code == 403)
-                            {
-                                service.Data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                                service.Status = "login_required";
-                                service.LastRefresh = DateTime.Now;
-                                return;
-                            }
-                            if (code == 429)
-                            {
-                                ApplyRateLimit(service, resp, "codex-api-error.txt", code);
-                                return;
-                            }
-                            if (!resp.IsSuccessStatusCode)
-                            {
-                                service.Status = "fetch_error";
-                                service.LastRefresh = DateTime.Now;
-                                WriteDebug("codex-api-error.txt", "HTTP " + code);
-                                return;
-                            }
-                            string json = await resp.Content.ReadAsStringAsync();
-                            WriteDebug("codex-api.txt", json);
-                            service.Data = UsageParsers.ParseCodexApi(json);
-                            service.Status = service.Data.Status;
-                            service.RateLimitedUntil = null;
-                            service.LastRefresh = DateTime.Now;
-                            return;
-                        }
-                    }
-                }
+                UsageFetchResult result = await CodexUsageClient.FetchAsync(httpClient, CodexCredentialPath);
+                if (result.CredentialRefreshed) lastCodexCredNotify = DateTime.Now;
+                ApplyFetchResult(service, result);
             }
             catch (Exception ex)
             {
@@ -269,7 +180,7 @@ namespace Headroom
                         return false;
                     }
                     string accountId = ExtractJsonString(body, "account_id")
-                                       ?? ExtractAccountIdFromIdToken(idToken);
+                                       ?? CodexUsageClient.ExtractAccountIdFromIdToken(idToken);
                     long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                         + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
                     WriteCodexCredentials(accessToken, refreshToken, idToken, accountId, expiresAtMs);
@@ -283,49 +194,5 @@ namespace Headroom
             }
         }
 
-        async Task<bool> TryRefreshCodexTokenAsync(string refreshToken, string existingAccountId)
-        {
-            if (string.IsNullOrEmpty(refreshToken)) return false;
-            try
-            {
-                var formParams = new Dictionary<string, string>
-                {
-                    { "grant_type",    "refresh_token" },
-                    { "refresh_token", refreshToken },
-                    { "client_id",     CodexOAuthClientId },
-                };
-                using (var content = new FormUrlEncodedContent(formParams))
-                using (var resp = await httpClient.PostAsync(CodexOAuthTokenUrl, content))
-                {
-                    string body = await resp.Content.ReadAsStringAsync();
-                    if (!resp.IsSuccessStatusCode)
-                    {
-                        WriteDebug("codex-refresh-error.txt", (int)resp.StatusCode + ": " + body);
-                        return false;
-                    }
-                    string accessToken = ExtractJsonString(body, "access_token");
-                    string newRefresh = ExtractJsonString(body, "refresh_token");
-                    string idToken = ExtractJsonString(body, "id_token");
-                    long expiresIn = ExtractJsonLong(body, "expires_in");
-                    if (string.IsNullOrEmpty(accessToken)) return false;
-                    if (string.IsNullOrEmpty(idToken)) idToken = ReadCodexIdToken();
-                    string accountId = ExtractJsonString(body, "account_id")
-                                       ?? ExtractAccountIdFromIdToken(idToken)
-                                       ?? existingAccountId;
-                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
-                    lastCodexCredNotify = DateTime.Now;
-                    WriteCodexCredentials(accessToken,
-                        !string.IsNullOrEmpty(newRefresh) ? newRefresh : refreshToken,
-                        idToken, accountId, expiresAtMs);
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteDebug("codex-refresh-error.txt", ex.ToString());
-                return false;
-            }
-        }
     }
 }

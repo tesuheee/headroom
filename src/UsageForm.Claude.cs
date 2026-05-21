@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -75,80 +74,9 @@ namespace Headroom
                     return;
                 }
 
-                string token, refreshToken;
-                long expiresAtMs;
-                if (!ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
-                {
-                    service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                    service.Status = "login_required";
-                    service.LastRefresh = DateTime.Now;
-                    return;
-                }
-                if (IsClaudeTokenExpired(expiresAtMs))
-                {
-                    bool refreshed = !string.IsNullOrEmpty(refreshToken)
-                        && await TryRefreshClaudeTokenAsync(refreshToken)
-                        && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs);
-                    if (!refreshed)
-                    {
-                        service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                        service.Status = "login_required";
-                        service.LastRefresh = DateTime.Now;
-                        return;
-                    }
-                }
-
-                for (int attempt = 0; attempt < 2; attempt++)
-                {
-                    using (var req = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/api/oauth/usage"))
-                    {
-                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                        req.Headers.Add("anthropic-beta", "oauth-2025-04-20");
-                        using (var resp = await httpClient.SendAsync(req))
-                        {
-                            int code = (int)resp.StatusCode;
-                            if ((code == 401 || code == 403) && attempt == 0 && !string.IsNullOrEmpty(refreshToken)
-                                && await TryRefreshClaudeTokenAsync(refreshToken)
-                                && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
-                            {
-                                continue;
-                            }
-                            if (code == 401 || code == 403)
-                            {
-                                service.Data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now, Status = "login_required" };
-                                service.Status = "login_required";
-                                service.LastRefresh = DateTime.Now;
-                                return;
-                            }
-                            if (code == 429)
-                            {
-                                if (attempt == 0 && !string.IsNullOrEmpty(refreshToken)
-                                    && ShouldRefreshClaudeTokenAfter429(resp)
-                                    && await TryRefreshClaudeTokenAsync(refreshToken)
-                                    && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
-                                {
-                                    continue;
-                                }
-                                ApplyRateLimit(service, resp, "claude-api-error.txt", code);
-                                return;
-                            }
-                            if (!resp.IsSuccessStatusCode)
-                            {
-                                service.Status = "fetch_error";
-                                service.LastRefresh = DateTime.Now;
-                                WriteDebug("claude-api-error.txt", "HTTP " + code);
-                                return;
-                            }
-                            string json = await resp.Content.ReadAsStringAsync();
-                            WriteDebug("claude-api.txt", json);
-                            service.Data = UsageParsers.ParseClaudeApi(json);
-                            service.Status = service.Data.Status;
-                            service.RateLimitedUntil = null;
-                            service.LastRefresh = DateTime.Now;
-                            return;
-                        }
-                    }
-                }
+                UsageFetchResult result = await ClaudeUsageClient.FetchAsync(httpClient, ClaudeCredentialPath);
+                if (result.CredentialRefreshed) lastClaudeCredNotify = DateTime.Now;
+                ApplyFetchResult(service, result);
             }
             catch (Exception ex)
             {
@@ -160,17 +88,6 @@ namespace Headroom
                 service.IsRefreshing = false;
                 Invalidate();
             }
-        }
-
-        static bool ShouldRefreshClaudeTokenAfter429(HttpResponseMessage resp)
-        {
-            var retryAfter = resp.Headers.RetryAfter;
-            if (retryAfter == null) return true;
-            if (retryAfter.Delta.HasValue)
-                return retryAfter.Delta.Value.TotalSeconds <= 5;
-            if (retryAfter.Date.HasValue)
-                return retryAfter.Date.Value.LocalDateTime <= DateTime.Now.AddSeconds(5);
-            return true;
         }
 
         async Task<bool> StartClaudePkceLoginAsync(ServiceState service)
@@ -266,44 +183,5 @@ namespace Headroom
             }
         }
 
-        async Task<bool> TryRefreshClaudeTokenAsync(string refreshToken)
-        {
-            if (string.IsNullOrEmpty(refreshToken)) return false;
-            try
-            {
-                var formParams = new Dictionary<string, string>
-                {
-                    { "grant_type",    "refresh_token" },
-                    { "refresh_token", refreshToken },
-                    { "client_id",     ClaudeOAuthClientId },
-                };
-                using (var content = new FormUrlEncodedContent(formParams))
-                using (var resp = await httpClient.PostAsync(ClaudeOAuthTokenUrl, content))
-                {
-                    string body = await resp.Content.ReadAsStringAsync();
-                    if (!resp.IsSuccessStatusCode)
-                    {
-                        WriteDebug("claude-refresh-error.txt", (int)resp.StatusCode + ": " + body);
-                        return false;
-                    }
-                    string accessToken = ExtractJsonString(body, "access_token");
-                    string newRefresh = ExtractJsonString(body, "refresh_token");
-                    long expiresIn = ExtractJsonLong(body, "expires_in");
-                    if (string.IsNullOrEmpty(accessToken)) return false;
-                    long expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                        + (expiresIn > 0 ? expiresIn * 1000 : 8L * 3600 * 1000);
-                    lastClaudeCredNotify = DateTime.Now;
-                    WriteClaudeCredentials(accessToken,
-                        !string.IsNullOrEmpty(newRefresh) ? newRefresh : refreshToken,
-                        expiresAtMs, ClaudeOAuthScopes.Split(' '));
-                    return true;
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteDebug("claude-refresh-error.txt", ex.ToString());
-                return false;
-            }
-        }
     }
 }
