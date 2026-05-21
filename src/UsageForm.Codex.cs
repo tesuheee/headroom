@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
@@ -37,43 +36,30 @@ namespace Headroom
             refreshToken = null;
             accountId = null;
             expiresAtMs = 0;
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
-            string content = TryReadFileWithRetry(path);
-            if (content == null) return false;
-
-            var root = Json.ParseObject(content);
-            var tokens = Json.Object(root, "tokens");
-            token = Json.String(tokens, "access_token");
-            if (string.IsNullOrEmpty(token)) return false;
-            refreshToken = Json.String(tokens, "refresh_token");
-            accountId = Json.String(tokens, "account_id");
-            long? expires = Json.Long(tokens, "expires_at_ms");
-            if (expires.HasValue) expiresAtMs = expires.Value;
+            CodexCredentials credentials;
+            if (!CodexCredentialStore.Read(CodexCredentialPath, out credentials)) return false;
+            token = credentials.AccessToken;
+            refreshToken = credentials.RefreshToken;
+            accountId = credentials.AccountId;
+            expiresAtMs = credentials.ExpiresAtMs;
             return true;
         }
 
         static string ReadCodexIdToken()
         {
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
-            string content = TryReadFileWithRetry(path);
-            if (content == null) return null;
-            return Json.String(Json.Object(Json.ParseObject(content), "tokens"), "id_token");
+            return CodexCredentialStore.ReadIdToken(CodexCredentialPath);
         }
 
         static void WriteCodexCredentials(string accessToken, string refreshToken, string idToken, string accountId, long expiresAtMs)
         {
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            var root = Json.ParseObject(TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
-            root["auth_mode"] = "chatgpt";
-            var tokens = Json.ObjectOrNew(root, "tokens");
-            if (!string.IsNullOrEmpty(idToken)) tokens["id_token"] = idToken;
-            tokens["access_token"] = accessToken ?? "";
-            if (!string.IsNullOrEmpty(refreshToken)) tokens["refresh_token"] = refreshToken;
-            if (!string.IsNullOrEmpty(accountId)) tokens["account_id"] = accountId;
-            if (expiresAtMs > 0) tokens["expires_at_ms"] = expiresAtMs;
-            root["last_refresh"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
+            CodexCredentialStore.Write(CodexCredentialPath, new CodexCredentials
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                IdToken = idToken,
+                AccountId = accountId,
+                ExpiresAtMs = expiresAtMs
+            });
         }
 
         static string ExtractAccountIdFromIdToken(string idToken)

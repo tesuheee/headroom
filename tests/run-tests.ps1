@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 $Out = Join-Path ([System.IO.Path]::GetTempPath()) "HeadroomTests"
-$Exe = Join-Path $Out "ParserTests.exe"
+$Exe = Join-Path $Out "HeadroomTests.exe"
 $Csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
@@ -11,8 +11,11 @@ $Sources = @(
   (Join-Path $Root "src\Models.cs"),
   (Join-Path $Root "src\DebugLog.cs"),
   (Join-Path $Root "src\Json.cs"),
+  (Join-Path $Root "src\CredentialStores.cs"),
   (Join-Path $Root "src\UsageParsers.cs"),
-  (Join-Path $Root "tests\ParserTests.cs")
+  (Join-Path $Root "tests\ParserTests.cs"),
+  (Join-Path $Root "tests\CredentialStoreTests.cs"),
+  (Join-Path $Root "tests\TestRunner.cs")
 )
 
 $CscArgs = @(

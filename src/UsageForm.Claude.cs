@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
@@ -38,31 +37,22 @@ namespace Headroom
             token = null;
             refreshToken = null;
             expiresAtMs = 0;
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
-            string content = TryReadFileWithRetry(path);
-            if (content == null) return false;
-
-            var root = Json.ParseObject(content);
-            var oauth = Json.Object(root, "claudeAiOauth");
-            token = Json.String(oauth, "accessToken");
-            long? expires = Json.Long(oauth, "expiresAt");
-            if (string.IsNullOrEmpty(token) || !expires.HasValue) return false;
-            expiresAtMs = expires.Value;
-            refreshToken = Json.String(oauth, "refreshToken");
+            ClaudeCredentials credentials;
+            if (!ClaudeCredentialStore.Read(ClaudeCredentialPath, out credentials)) return false;
+            token = credentials.AccessToken;
+            refreshToken = credentials.RefreshToken;
+            expiresAtMs = credentials.ExpiresAtMs;
             return true;
         }
 
         static void WriteClaudeCredentials(string accessToken, string refreshToken, long expiresAtMs, string[] scopes)
         {
-            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            var root = Json.ParseObject(TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
-            var oauth = Json.ObjectOrNew(root, "claudeAiOauth");
-            oauth["accessToken"] = accessToken ?? "";
-            if (refreshToken != null) oauth["refreshToken"] = refreshToken;
-            oauth["expiresAt"] = expiresAtMs;
-            if (scopes != null) oauth["scopes"] = scopes;
-            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
+            ClaudeCredentialStore.Write(ClaudeCredentialPath, new ClaudeCredentials
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                ExpiresAtMs = expiresAtMs
+            }, scopes);
         }
 
         async Task RefreshClaudeViaApiAsync(ServiceState service, bool manual)

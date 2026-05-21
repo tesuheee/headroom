@@ -5,24 +5,13 @@ namespace Headroom
 {
     static class ParserTests
     {
-        static int Main(string[] args)
+        public static void Run(string root)
         {
-            string root = args.Length > 0 ? args[0] : Directory.GetCurrentDirectory();
-            try
-            {
-                TestOkFixture(root);
-                TestExhaustedFixtures(root);
-                TestNoDataFixture(root);
-                TestNestedObjectsDoNotBreakCodexParser();
-                Console.WriteLine("ParserTests: passed");
-                return 0;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine("ParserTests: failed");
-                Console.Error.WriteLine(ex.Message);
-                return 1;
-            }
+            TestOkFixture(root);
+            TestExhaustedFixtures(root);
+            TestNoDataFixture(root);
+            TestNestedObjectsDoNotBreakCodexParser();
+            Console.WriteLine("ParserTests: passed");
         }
 
         static void TestOkFixture(string root)
