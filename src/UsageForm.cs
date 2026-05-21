@@ -57,9 +57,6 @@ namespace Headroom
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         }
 
-        bool resizing;
-        Point resizeStartPoint;
-        Size resizeStartSize;
         string hoverKey = "";
         bool sideRailVisible;
         double sideRailOpacity;
@@ -100,7 +97,6 @@ namespace Headroom
             MouseMove += OnMouseMove;
             MouseUp += (s, e) =>
             {
-                resizing = false;
                 if (pendingSilentKey.Length > 0)
                 {
                     if (!silentDragging)

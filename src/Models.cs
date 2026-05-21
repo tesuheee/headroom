@@ -44,13 +44,13 @@ namespace Headroom
         public DateTime UpdatedAt;
         public double? FiveHourUsed;
         public double? WeeklyUsed;
-        public int? FiveHourRemaining;
-        public int? WeeklyRemaining;
+        public int? FiveHourRemaining = null;
+        public int? WeeklyRemaining = null;
         public string FiveHourReset;
         public string WeeklyReset;
-        public bool FiveHourNotStarted;
-        public bool WeeklyNotStarted;
-        public bool HitLimit;
+        public bool FiveHourNotStarted = false;
+        public bool WeeklyNotStarted = false;
+        public bool HitLimit = false;
 
         public bool HasAnyValue()
         {
