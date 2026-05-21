@@ -22,7 +22,6 @@ namespace Headroom
         const int WmNcLButtonDown = 0xA1;
         const int HtCaption = 0x2;
         const int PkceLoginTimeoutMs = 5 * 60 * 1000;
-        const int DefaultRateLimitBackoffMinutes = 30;
         const float LabelFontSize   = 10.8f;
         const float PercentFontSize = 16.5f;
         const float ResetFontSize   =  9.9f;
@@ -161,9 +160,8 @@ namespace Headroom
 
         async Task RunScheduledRefreshAsync()
         {
-            bool anyVeryNear  = (settings.ShowClaude && IsVeryNearReset(claude.Data))    || (settings.ShowCodex && IsVeryNearReset(codex.Data));
-            bool anyNearReset = (settings.ShowClaude && IsNearOrRecentReset(claude.Data)) || (settings.ShowCodex && IsNearOrRecentReset(codex.Data));
-            schedulerTimer.Interval = anyVeryNear ? 5000 : (anyNearReset ? 5000 : 10000);
+            DateTime now = DateTime.Now;
+            schedulerTimer.Interval = RefreshPolicy.SchedulerIntervalMs(settings, claude, codex, now);
 
             if (settings.ShowCodex)  await MaybeRefreshAsync(codex);
             if (settings.ShowClaude) await MaybeRefreshAsync(claude);
@@ -171,73 +169,19 @@ namespace Headroom
 
         async Task MaybeRefreshAsync(ServiceState service)
         {
-            if (service.ManuallyLoggedOut) return;
-            if (service.IsRefreshing) return;
-            if (service.RateLimitedUntil.HasValue)
+            var decision = RefreshPolicy.Evaluate(service, settings, DateTime.Now);
+            if (decision.RateLimited)
             {
-                if (service.RateLimitedUntil.Value > DateTime.Now)
-                {
-                    service.Status = "rate_limited";
-                    return;
-                }
-                service.RateLimitedUntil = null;
+                service.Status = "rate_limited";
+                return;
             }
-            if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
+            if (decision.RateLimitExpired)
+                service.RateLimitedUntil = null;
+            if (decision.BoostExpired)
                 service.BoostUntil = null;
 
-            TimeSpan due;
-            if (IsVeryNearReset(service.Data))
-                due = TimeSpan.FromSeconds(5);
-            else if (IsNearOrRecentReset(service.Data))
-                due = TimeSpan.FromSeconds(Math.Max(15, settings.NearResetIntervalSeconds));
-            else
-                due = TimeSpan.FromMinutes(Math.Max(1, RefreshIntervalMinutes(service)));
-
-            if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= due)
+            if (decision.ShouldRefresh)
                 await RefreshServiceAsync(service, false);
-        }
-
-        static bool IsNearOrRecentReset(UsageData data)
-        {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
-
-            TimeSpan rem;
-            if (fiveEmpty)
-            {
-                if (string.IsNullOrEmpty(data.FiveHourReset)) return true;
-                if (TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            if (weekEmpty)
-            {
-                if (string.IsNullOrEmpty(data.WeeklyReset)) return true;
-                if (TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            return false;
-        }
-
-        static bool IsVeryNearReset(UsageData data)
-        {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
-            TimeSpan rem;
-            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset)
-                && TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset)
-                && TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            return false;
-        }
-
-        int RefreshIntervalMinutes(ServiceState service)
-        {
-            if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
-            return settings.NormalIntervalMinutes;
         }
 
         static void UpdateBarAnimation(ServiceState svc, bool showUsed)
@@ -346,22 +290,7 @@ namespace Headroom
 
         static DateTime RateLimitUntil(HttpResponseMessage resp)
         {
-            var retryAfter = resp.Headers.RetryAfter;
-            if (retryAfter != null)
-            {
-                if (retryAfter.Delta.HasValue)
-                {
-                    double seconds = Math.Max(60, Math.Min(7200, retryAfter.Delta.Value.TotalSeconds));
-                    return DateTime.Now.AddSeconds(seconds);
-                }
-                if (retryAfter.Date.HasValue)
-                {
-                    DateTime target = retryAfter.Date.Value.LocalDateTime;
-                    if (target > DateTime.Now)
-                        return target;
-                }
-            }
-            return DateTime.Now.AddMinutes(DefaultRateLimitBackoffMinutes);
+            return RefreshPolicy.RateLimitUntil(resp, DateTime.Now);
         }
 
         static string TryReadFileWithRetry(string path)

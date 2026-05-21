@@ -14,8 +14,10 @@ $Sources = @(
   (Join-Path $Root "src\Json.cs"),
   (Join-Path $Root "src\CredentialStores.cs"),
   (Join-Path $Root "src\UsageParsers.cs"),
+  (Join-Path $Root "src\RefreshPolicy.cs"),
   (Join-Path $Root "tests\ParserTests.cs"),
   (Join-Path $Root "tests\CredentialStoreTests.cs"),
+  (Join-Path $Root "tests\RefreshPolicyTests.cs"),
   (Join-Path $Root "tests\TestRunner.cs")
 )
 
@@ -28,6 +30,7 @@ $CscArgs = @(
   "/reference:System.Core.dll",
   "/reference:System.Drawing.dll",
   "/reference:System.Windows.Forms.dll",
+  "/reference:System.Net.Http.dll",
   "/reference:System.Web.Extensions.dll"
 ) + $Sources
 
