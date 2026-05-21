@@ -29,6 +29,20 @@ namespace Headroom
             return value as Dictionary<string, object>;
         }
 
+        public static Dictionary<string, object> ObjectOrNew(Dictionary<string, object> obj, string key)
+        {
+            var nested = Object(obj, key);
+            if (nested != null) return nested;
+            nested = new Dictionary<string, object>();
+            if (obj != null) obj[key] = nested;
+            return nested;
+        }
+
+        public static string Serialize(object value)
+        {
+            return Serializer.Serialize(value);
+        }
+
         public static string String(Dictionary<string, object> obj, string key)
         {
             if (obj == null) return null;

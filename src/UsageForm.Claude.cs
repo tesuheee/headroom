@@ -59,22 +59,13 @@ namespace Headroom
         {
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", ".credentials.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            var sb = new System.Text.StringBuilder();
-            sb.Append("{\n  \"claudeAiOauth\": {\n");
-            sb.Append("    \"accessToken\": \"").Append(JsonEscape(accessToken ?? "")).Append("\",\n");
-            sb.Append("    \"refreshToken\": \"").Append(JsonEscape(refreshToken ?? "")).Append("\",\n");
-            sb.Append("    \"expiresAt\": ").Append(expiresAtMs).Append(",\n");
-            sb.Append("    \"scopes\": [");
-            if (scopes != null)
-            {
-                for (int i = 0; i < scopes.Length; i++)
-                {
-                    if (i > 0) sb.Append(", ");
-                    sb.Append('"').Append(JsonEscape(scopes[i])).Append('"');
-                }
-            }
-            sb.Append("]\n  }\n}\n");
-            File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
+            var root = Json.ParseObject(TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
+            var oauth = Json.ObjectOrNew(root, "claudeAiOauth");
+            oauth["accessToken"] = accessToken ?? "";
+            if (refreshToken != null) oauth["refreshToken"] = refreshToken;
+            oauth["expiresAt"] = expiresAtMs;
+            if (scopes != null) oauth["scopes"] = scopes;
+            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
         }
 
         static string ConvertIsoToLegacyFormat(string iso)

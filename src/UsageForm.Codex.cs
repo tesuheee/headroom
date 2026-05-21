@@ -69,25 +69,16 @@ namespace Headroom
         {
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
             Directory.CreateDirectory(Path.GetDirectoryName(path));
-            var sb = new System.Text.StringBuilder();
-            sb.Append("{\n");
-            sb.Append("  \"auth_mode\": \"chatgpt\",\n");
-            sb.Append("  \"tokens\": {\n");
-            if (!string.IsNullOrEmpty(idToken))
-                sb.Append("    \"id_token\": \"").Append(JsonEscape(idToken)).Append("\",\n");
-            sb.Append("    \"access_token\": \"").Append(JsonEscape(accessToken ?? "")).Append("\"");
-            if (!string.IsNullOrEmpty(refreshToken))
-                sb.Append(",\n    \"refresh_token\": \"").Append(JsonEscape(refreshToken)).Append("\"");
-            if (!string.IsNullOrEmpty(accountId))
-                sb.Append(",\n    \"account_id\": \"").Append(JsonEscape(accountId)).Append("\"");
-            if (expiresAtMs > 0)
-                sb.Append(",\n    \"expires_at_ms\": ").Append(expiresAtMs);
-            sb.Append("\n  },\n");
-            sb.Append("  \"last_refresh\": \"")
-              .Append(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture))
-              .Append("\"\n");
-            sb.Append("}\n");
-            File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
+            var root = Json.ParseObject(TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
+            root["auth_mode"] = "chatgpt";
+            var tokens = Json.ObjectOrNew(root, "tokens");
+            if (!string.IsNullOrEmpty(idToken)) tokens["id_token"] = idToken;
+            tokens["access_token"] = accessToken ?? "";
+            if (!string.IsNullOrEmpty(refreshToken)) tokens["refresh_token"] = refreshToken;
+            if (!string.IsNullOrEmpty(accountId)) tokens["account_id"] = accountId;
+            if (expiresAtMs > 0) tokens["expires_at_ms"] = expiresAtMs;
+            root["last_refresh"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
+            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
         }
 
         static string ConvertUnixSecondsToLegacyFormat(long unixSec)
