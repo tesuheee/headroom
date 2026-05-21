@@ -369,16 +369,9 @@ namespace Headroom
                         "[Headroom] Type /login below to sign in. You can close this window once login completes.")
                     : T("[Headroom] ブラウザで認証してください。完了したらこのウィンドウは閉じてOKです。",
                         "[Headroom] A browser will open for sign-in. You can close this window once login completes.");
-                string cliExec = service.Name == "Claude" ? "claude" : "codex login";
-                string cliCommand = "chcp 65001 >nul && title " + title + " && echo. && echo " + banner + " && echo. && " + cliExec;
                 try
                 {
-                    var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
-                    {
-                        UseShellExecute = true,
-                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
-                    };
-                    System.Diagnostics.Process.Start(psi);
+                    CliLoginLauncher.Start(service.Name, title, banner);
                     service.Status = "login_pending";
                     Invalidate();
                 }
