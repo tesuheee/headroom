@@ -95,34 +95,27 @@ namespace Headroom
                 return data;
             }
 
-            var fiveMatch = Regex.Match(json, "\"five_hour\"\\s*:\\s*(\\{[^{}]*\\})");
-            if (fiveMatch.Success)
+            var root = Json.ParseObject(json);
+            if (root == null)
             {
-                var inner = fiveMatch.Groups[1].Value;
-                var u = Regex.Match(inner, "\"utilization\"\\s*:\\s*([\\d.]+)");
-                if (u.Success)
-                {
-                    double util;
-                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out util))
-                        data.FiveHourUsed = util;
-                }
-                var r = Regex.Match(inner, "\"resets_at\"\\s*:\\s*\"([^\"]+)\"");
-                if (r.Success) data.FiveHourReset = ConvertIsoToLegacyFormat(r.Groups[1].Value);
+                data.Status = "no_data";
+                return data;
             }
 
-            var weekMatch = Regex.Match(json, "\"seven_day\"\\s*:\\s*(\\{[^{}]*\\})");
-            if (weekMatch.Success)
+            var five = Json.Object(root, "five_hour");
+            if (five != null)
             {
-                var inner = weekMatch.Groups[1].Value;
-                var u = Regex.Match(inner, "\"utilization\"\\s*:\\s*([\\d.]+)");
-                if (u.Success)
-                {
-                    double util;
-                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out util))
-                        data.WeeklyUsed = util;
-                }
-                var r = Regex.Match(inner, "\"resets_at\"\\s*:\\s*\"([^\"]+)\"");
-                if (r.Success) data.WeeklyReset = ConvertIsoToLegacyFormat(r.Groups[1].Value);
+                data.FiveHourUsed = Json.Double(five, "utilization");
+                string reset = Json.String(five, "resets_at");
+                if (!string.IsNullOrEmpty(reset)) data.FiveHourReset = ConvertIsoToLegacyFormat(reset);
+            }
+
+            var week = Json.Object(root, "seven_day");
+            if (week != null)
+            {
+                data.WeeklyUsed = Json.Double(week, "utilization");
+                string reset = Json.String(week, "resets_at");
+                if (!string.IsNullOrEmpty(reset)) data.WeeklyReset = ConvertIsoToLegacyFormat(reset);
             }
 
             if (!data.HasAnyValue()) data.Status = "no_data";

@@ -110,44 +110,29 @@ namespace Headroom
                 return data;
             }
 
-            var primary = Regex.Match(json, "\"primary_window\"\\s*:\\s*(\\{[^{}]*\\})");
-            if (primary.Success)
+            var root = Json.ParseObject(json);
+            if (root == null)
             {
-                var inner = primary.Groups[1].Value;
-                var u = Regex.Match(inner, "\"used_percent\"\\s*:\\s*([\\d.]+)");
-                if (u.Success)
-                {
-                    double used;
-                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out used))
-                        data.FiveHourUsed = used;
-                }
-                var r = Regex.Match(inner, "\"reset_at\"\\s*:\\s*(\\d+)");
-                if (r.Success)
-                {
-                    long unixSec;
-                    if (long.TryParse(r.Groups[1].Value, out unixSec) && unixSec > 0)
-                        data.FiveHourReset = ConvertUnixSecondsToLegacyFormat(unixSec);
-                }
+                data.Status = "no_data";
+                return data;
             }
 
-            var secondary = Regex.Match(json, "\"secondary_window\"\\s*:\\s*(\\{[^{}]*\\})");
-            if (secondary.Success)
+            var primary = Json.Object(root, "primary_window");
+            if (primary != null)
             {
-                var inner = secondary.Groups[1].Value;
-                var u = Regex.Match(inner, "\"used_percent\"\\s*:\\s*([\\d.]+)");
-                if (u.Success)
-                {
-                    double used;
-                    if (double.TryParse(u.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out used))
-                        data.WeeklyUsed = used;
-                }
-                var r = Regex.Match(inner, "\"reset_at\"\\s*:\\s*(\\d+)");
-                if (r.Success)
-                {
-                    long unixSec;
-                    if (long.TryParse(r.Groups[1].Value, out unixSec) && unixSec > 0)
-                        data.WeeklyReset = ConvertUnixSecondsToLegacyFormat(unixSec);
-                }
+                data.FiveHourUsed = Json.Double(primary, "used_percent");
+                long? reset = Json.Long(primary, "reset_at");
+                if (reset.HasValue && reset.Value > 0)
+                    data.FiveHourReset = ConvertUnixSecondsToLegacyFormat(reset.Value);
+            }
+
+            var secondary = Json.Object(root, "secondary_window");
+            if (secondary != null)
+            {
+                data.WeeklyUsed = Json.Double(secondary, "used_percent");
+                long? reset = Json.Long(secondary, "reset_at");
+                if (reset.HasValue && reset.Value > 0)
+                    data.WeeklyReset = ConvertUnixSecondsToLegacyFormat(reset.Value);
             }
 
             if (!data.HasAnyValue()) data.Status = "no_data";
