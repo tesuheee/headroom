@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace Headroom
@@ -141,7 +140,7 @@ namespace Headroom
             get { return Path.GetDirectoryName(SettingsPath); }
         }
 
-        static string LegacySettingsPath
+        internal static string LegacySettingsPath
         {
             get { return Path.Combine(Application.StartupPath, "settings.json"); }
         }
@@ -153,52 +152,7 @@ namespace Headroom
 
         public static WidgetSettings Load()
         {
-            var s = new WidgetSettings();
-            try
-            {
-                string target = SettingsPath;
-                if (!File.Exists(target))
-                {
-                    string legacy = LegacySettingsPath;
-                    if (File.Exists(legacy))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(target));
-                        File.Copy(legacy, target, false);
-                    }
-                    else
-                    {
-                        s.Save();
-                        return s;
-                    }
-                }
-                string json = File.ReadAllText(target);
-                s.Width = ReadInt(json, "width", s.Width);
-                s.Height = ReadInt(json, "height", s.Height);
-                s.Language = ReadString(json, "language", s.Language);
-                s.NormalIntervalMinutes = ReadInt(json, "normalIntervalMinutes", s.NormalIntervalMinutes);
-                s.BoostDurationMinutes = ReadInt(json, "boostDurationMinutes", s.BoostDurationMinutes);
-                s.BoostIntervalMinutes = ReadInt(json, "boostIntervalMinutes", s.BoostIntervalMinutes);
-                s.NearResetIntervalSeconds = ReadInt(json, "nearResetIntervalSeconds", s.NearResetIntervalSeconds);
-                s.AlwaysOnTop = ReadBool(json, "alwaysOnTop", s.AlwaysOnTop);
-                s.ShowCodex = ReadBool(json, "showCodex", s.ShowCodex);
-                s.ShowClaude = ReadBool(json, "showClaude", s.ShowClaude);
-                s.LayoutMode = NormalizeLayoutMode(ReadString(json, "layoutMode", s.LayoutMode));
-                s.CodexShowUsed = ReadBool(json, "codexShowUsed", s.CodexShowUsed);
-                s.ClaudeShowUsed = ReadBool(json, "claudeShowUsed", s.ClaudeShowUsed);
-                s.CodexLoggedOut = ReadBool(json, "codexLoggedOut", s.CodexLoggedOut);
-                s.ClaudeLoggedOut = ReadBool(json, "claudeLoggedOut", s.ClaudeLoggedOut);
-                s.CodexLoginMethod = NormalizeLoginMethod(ReadString(json, "codexLoginMethod", s.CodexLoginMethod));
-                s.ClaudeLoginMethod = NormalizeLoginMethod(ReadString(json, "claudeLoginMethod", s.ClaudeLoginMethod));
-                s.FiveHourResetMode = NormalizeResetMode(ReadString(json, "fiveHourResetMode", s.FiveHourResetMode));
-                s.WeeklyResetMode = NormalizeResetMode(ReadString(json, "weeklyResetMode", s.WeeklyResetMode));
-                s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
-                s.CriticalRemainingPercent = ReadInt(json, "criticalRemainingPercent", s.CriticalRemainingPercent);
-            }
-            catch (Exception ex)
-            {
-                DebugLog.Write("settings-load-error.txt", ex.ToString());
-            }
-            return s;
+            return SettingsStore.Load(SettingsPath, LegacySettingsPath);
         }
 
         public WidgetSettings Clone()
@@ -240,82 +194,7 @@ namespace Headroom
 
         public void Save()
         {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
-                File.WriteAllText(SettingsPath,
-                    "{\r\n" +
-                    "  \"width\": " + Width + ",\r\n" +
-                    "  \"height\": " + Height + ",\r\n" +
-                    "  \"language\": \"" + Escape(Language) + "\",\r\n" +
-                    "  \"normalIntervalMinutes\": " + NormalIntervalMinutes + ",\r\n" +
-                    "  \"boostDurationMinutes\": " + BoostDurationMinutes + ",\r\n" +
-                    "  \"boostIntervalMinutes\": " + BoostIntervalMinutes + ",\r\n" +
-                    "  \"nearResetIntervalSeconds\": " + NearResetIntervalSeconds + ",\r\n" +
-                    "  \"alwaysOnTop\": " + (AlwaysOnTop ? "true" : "false") + ",\r\n" +
-                    "  \"showCodex\": " + (ShowCodex ? "true" : "false") + ",\r\n" +
-                    "  \"showClaude\": " + (ShowClaude ? "true" : "false") + ",\r\n" +
-                    "  \"layoutMode\": \"" + Escape(LayoutMode) + "\",\r\n" +
-                    "  \"codexShowUsed\": " + (CodexShowUsed ? "true" : "false") + ",\r\n" +
-                    "  \"claudeShowUsed\": " + (ClaudeShowUsed ? "true" : "false") + ",\r\n" +
-                    "  \"codexLoggedOut\": " + (CodexLoggedOut ? "true" : "false") + ",\r\n" +
-                    "  \"claudeLoggedOut\": " + (ClaudeLoggedOut ? "true" : "false") + ",\r\n" +
-                    "  \"codexLoginMethod\": \"" + Escape(CodexLoginMethod) + "\",\r\n" +
-                    "  \"claudeLoginMethod\": \"" + Escape(ClaudeLoginMethod) + "\",\r\n" +
-                    "  \"fiveHourResetMode\": \"" + Escape(FiveHourResetMode) + "\",\r\n" +
-                    "  \"weeklyResetMode\": \"" + Escape(WeeklyResetMode) + "\",\r\n" +
-                    "  \"warningRemainingPercent\": " + WarningRemainingPercent + ",\r\n" +
-                    "  \"criticalRemainingPercent\": " + CriticalRemainingPercent + "\r\n" +
-                    "}\r\n");
-            }
-            catch (Exception ex)
-            {
-                DebugLog.Write("settings-save-error.txt", ex.ToString());
-            }
-        }
-
-        static int ReadInt(string json, string key, int fallback)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(\\d+)");
-            if (!m.Success) return fallback;
-            int value;
-            return int.TryParse(m.Groups[1].Value, out value) ? value : fallback;
-        }
-
-        static bool ReadBool(string json, string key, bool fallback)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(true|false)", RegexOptions.IgnoreCase);
-            if (!m.Success) return fallback;
-            return string.Equals(m.Groups[1].Value, "true", StringComparison.OrdinalIgnoreCase);
-        }
-
-        static string ReadString(string json, string key, string fallback)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
-            if (!m.Success) return fallback;
-            return m.Groups[1].Value;
-        }
-
-        static string NormalizeResetMode(string value)
-        {
-            return string.Equals(value, "time", StringComparison.OrdinalIgnoreCase) ? "time" : "relative";
-        }
-
-        static string NormalizeLayoutMode(string value)
-        {
-            return string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
-        }
-
-        static string NormalizeLoginMethod(string value)
-        {
-            if (string.Equals(value, "cli", StringComparison.OrdinalIgnoreCase)) return "cli";
-            if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase)) return "auto";
-            return "browser";
-        }
-
-        static string Escape(string value)
-        {
-            return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+            SettingsStore.Save(SettingsPath, this);
         }
     }
 }

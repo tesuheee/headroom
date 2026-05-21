@@ -12,12 +12,14 @@ $Sources = @(
   (Join-Path $Root "src\DebugLog.cs"),
   (Join-Path $Root "src\FileWrites.cs"),
   (Join-Path $Root "src\Json.cs"),
+  (Join-Path $Root "src\SettingsStore.cs"),
   (Join-Path $Root "src\CredentialStores.cs"),
   (Join-Path $Root "src\UsageParsers.cs"),
   (Join-Path $Root "src\RefreshPolicy.cs"),
   (Join-Path $Root "tests\ParserTests.cs"),
   (Join-Path $Root "tests\CredentialStoreTests.cs"),
   (Join-Path $Root "tests\RefreshPolicyTests.cs"),
+  (Join-Path $Root "tests\SettingsStoreTests.cs"),
   (Join-Path $Root "tests\TestRunner.cs")
 )
 

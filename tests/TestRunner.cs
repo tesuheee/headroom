@@ -13,6 +13,7 @@ namespace Headroom
                 ParserTests.Run(root);
                 CredentialStoreTests.Run(root);
                 RefreshPolicyTests.Run(root);
+                SettingsStoreTests.Run(root);
                 Console.WriteLine("All tests passed");
                 return 0;
             }

@@ -101,5 +101,20 @@ namespace Headroom
             }
             return null;
         }
+
+        public static bool? Bool(Dictionary<string, object> obj, string key)
+        {
+            if (obj == null) return null;
+            object value;
+            if (!obj.TryGetValue(key, out value) || value == null) return null;
+            if (value is bool) return (bool)value;
+            string s = value as string;
+            if (s != null)
+            {
+                bool parsed;
+                if (bool.TryParse(s, out parsed)) return parsed;
+            }
+            return null;
+        }
     }
 }
