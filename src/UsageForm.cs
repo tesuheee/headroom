@@ -277,8 +277,8 @@ namespace Headroom
         async Task RefreshAllAsync(bool manual)
         {
             var tasks = new List<Task>();
-            if (settings.ShowCodex)  tasks.Add(RefreshCodexViaApiAsync(codex, manual));
-            if (settings.ShowClaude) tasks.Add(RefreshClaudeViaApiAsync(claude, manual));
+            if (settings.ShowCodex)  tasks.Add(RefreshServiceAsync(codex, manual));
+            if (settings.ShowClaude) tasks.Add(RefreshServiceAsync(claude, manual));
             await Task.WhenAll(tasks);
         }
 
@@ -618,6 +618,7 @@ namespace Headroom
             {
                 SetupCredentialWatchers();
                 service.ManuallyLoggedOut = false;
+                service.RateLimitedUntil = null;
                 await RefreshServiceAsync(service, true);
             }
             else if (service.Status == "login_pending")
@@ -730,9 +731,10 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     claude.ManuallyLoggedOut = false;
+                    claude.RateLimitedUntil = null;
                     settings.ClaudeLoggedOut = false;
                     settings.Save();
-                    await RefreshClaudeViaApiAsync(claude, true);
+                    await RefreshServiceAsync(claude, true);
                 }));
             }
             catch { }
@@ -747,9 +749,10 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     codex.ManuallyLoggedOut = false;
+                    codex.RateLimitedUntil = null;
                     settings.CodexLoggedOut = false;
                     settings.Save();
-                    await RefreshCodexViaApiAsync(codex, true);
+                    await RefreshServiceAsync(codex, true);
                 }));
             }
             catch { }

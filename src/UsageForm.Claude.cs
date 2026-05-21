@@ -196,6 +196,13 @@ namespace Headroom
                             }
                             if (code == 429)
                             {
+                                if (attempt == 0 && !string.IsNullOrEmpty(refreshToken)
+                                    && ShouldRefreshClaudeTokenAfter429(resp)
+                                    && await TryRefreshClaudeTokenAsync(refreshToken)
+                                    && ReadClaudeCredentials(out token, out refreshToken, out expiresAtMs))
+                                {
+                                    continue;
+                                }
                                 ApplyRateLimit(service, resp, "claude-api-error.txt", code);
                                 return;
                             }
@@ -227,6 +234,17 @@ namespace Headroom
                 service.IsRefreshing = false;
                 Invalidate();
             }
+        }
+
+        static bool ShouldRefreshClaudeTokenAfter429(HttpResponseMessage resp)
+        {
+            var retryAfter = resp.Headers.RetryAfter;
+            if (retryAfter == null) return true;
+            if (retryAfter.Delta.HasValue)
+                return retryAfter.Delta.Value.TotalSeconds <= 5;
+            if (retryAfter.Date.HasValue)
+                return retryAfter.Date.Value.LocalDateTime <= DateTime.Now.AddSeconds(5);
+            return true;
         }
 
         async Task<bool> StartClaudePkceLoginAsync(ServiceState service)
