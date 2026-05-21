@@ -17,7 +17,8 @@ $ExeName = "Headroom.exe"
 if ($DebugFixture) { $ExeName = "Headroom.fixture.exe" }
 elseif ($Version) { $ExeName = "Headroom-v$Version.exe" }
 $Exe = Join-Path $Out $ExeName
-$Source = Join-Path $PSScriptRoot "Program.cs"
+$SrcDir  = Join-Path $PSScriptRoot "src"
+$Sources = Get-ChildItem -Path $SrcDir -Filter "*.cs" | Select-Object -ExpandProperty FullName
 $CscArgs = @(
   "/nologo",
   "/target:winexe",
@@ -28,9 +29,8 @@ $CscArgs = @(
   "/reference:System.Core.dll",
   "/reference:System.Drawing.dll",
   "/reference:System.Windows.Forms.dll",
-  "/reference:System.Net.Http.dll",
-  $Source
-)
+  "/reference:System.Net.Http.dll"
+) + $Sources
 
 & $Csc @CscArgs
 if ($LASTEXITCODE -ne 0) {
