@@ -772,14 +772,12 @@ namespace Headroom
 
         internal static void WriteDebug(string name, string text)
         {
-            string dir = DebugDirectory;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, name), text ?? "");
+            DebugLog.Write(name, text);
         }
 
         internal static string DebugDirectory
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom"); }
+            get { return DebugLog.DirectoryPath; }
         }
 
         protected override void OnHandleCreated(EventArgs e)

@@ -194,7 +194,10 @@ namespace Headroom
                 s.WarningRemainingPercent = ReadInt(json, "warningRemainingPercent", s.WarningRemainingPercent);
                 s.CriticalRemainingPercent = ReadInt(json, "criticalRemainingPercent", s.CriticalRemainingPercent);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLog.Write("settings-load-error.txt", ex.ToString());
+            }
             return s;
         }
 
@@ -265,7 +268,10 @@ namespace Headroom
                     "  \"criticalRemainingPercent\": " + CriticalRemainingPercent + "\r\n" +
                     "}\r\n");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLog.Write("settings-save-error.txt", ex.ToString());
+            }
         }
 
         static int ReadInt(string json, string key, int fallback)
