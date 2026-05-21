@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -44,14 +42,13 @@ namespace Headroom
             string content = TryReadFileWithRetry(path);
             if (content == null) return false;
 
-            var t = Regex.Match(content, "\"accessToken\"\\s*:\\s*\"([^\"]+)\"");
-            var e = Regex.Match(content, "\"expiresAt\"\\s*:\\s*(\\d+)");
-            if (!t.Success || !e.Success) return false;
-            token = t.Groups[1].Value;
-            if (!long.TryParse(e.Groups[1].Value, out expiresAtMs)) return false;
-
-            var r = Regex.Match(content, "\"refreshToken\"\\s*:\\s*\"([^\"]+)\"");
-            if (r.Success) refreshToken = r.Groups[1].Value;
+            var root = Json.ParseObject(content);
+            var oauth = Json.Object(root, "claudeAiOauth");
+            token = Json.String(oauth, "accessToken");
+            long? expires = Json.Long(oauth, "expiresAt");
+            if (string.IsNullOrEmpty(token) || !expires.HasValue) return false;
+            expiresAtMs = expires.Value;
+            refreshToken = Json.String(oauth, "refreshToken");
             return true;
         }
 

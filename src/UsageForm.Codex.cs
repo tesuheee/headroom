@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Headroom
@@ -42,18 +41,14 @@ namespace Headroom
             string content = TryReadFileWithRetry(path);
             if (content == null) return false;
 
-            var t = Regex.Match(content, "\"access_token\"\\s*:\\s*\"([^\"]+)\"");
-            if (!t.Success) return false;
-            token = t.Groups[1].Value;
-
-            var rt = Regex.Match(content, "\"refresh_token\"\\s*:\\s*\"([^\"]+)\"");
-            if (rt.Success) refreshToken = rt.Groups[1].Value;
-
-            var a = Regex.Match(content, "\"account_id\"\\s*:\\s*\"([^\"]+)\"");
-            if (a.Success) accountId = a.Groups[1].Value;
-
-            var ex = Regex.Match(content, "\"expires_at_ms\"\\s*:\\s*(\\d+)");
-            if (ex.Success) long.TryParse(ex.Groups[1].Value, out expiresAtMs);
+            var root = Json.ParseObject(content);
+            var tokens = Json.Object(root, "tokens");
+            token = Json.String(tokens, "access_token");
+            if (string.IsNullOrEmpty(token)) return false;
+            refreshToken = Json.String(tokens, "refresh_token");
+            accountId = Json.String(tokens, "account_id");
+            long? expires = Json.Long(tokens, "expires_at_ms");
+            if (expires.HasValue) expiresAtMs = expires.Value;
             return true;
         }
 
@@ -62,7 +57,7 @@ namespace Headroom
             string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "auth.json");
             string content = TryReadFileWithRetry(path);
             if (content == null) return null;
-            return ExtractJsonString(content, "id_token");
+            return Json.String(Json.Object(Json.ParseObject(content), "tokens"), "id_token");
         }
 
         static void WriteCodexCredentials(string accessToken, string refreshToken, string idToken, string accountId, long expiresAtMs)
@@ -93,14 +88,11 @@ namespace Headroom
                 if (mod > 0) payload += new string('=', 4 - mod);
                 byte[] bytes = Convert.FromBase64String(payload);
                 string json = System.Text.Encoding.UTF8.GetString(bytes);
-                string id = ExtractJsonString(json, "chatgpt_account_id");
+                var claims = Json.ParseObject(json);
+                string id = Json.String(claims, "chatgpt_account_id");
                 if (!string.IsNullOrEmpty(id)) return id;
-                var m = Regex.Match(json, "\"https://api\\.openai\\.com/auth\"\\s*:\\s*\\{([^}]+)\\}");
-                if (m.Success)
-                {
-                    id = ExtractJsonString(m.Groups[1].Value, "chatgpt_account_id");
-                    if (!string.IsNullOrEmpty(id)) return id;
-                }
+                id = Json.String(Json.Object(claims, "https://api.openai.com/auth"), "chatgpt_account_id");
+                if (!string.IsNullOrEmpty(id)) return id;
             }
             catch { }
             return null;
