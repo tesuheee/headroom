@@ -22,11 +22,10 @@ Headroom is a compact Windows desktop AI usage monitor for Claude Code and Codex
 1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom-ai-usage-monitor/releases) and unzip anywhere.
 2. Run `Headroom.exe`.
 3. On first launch, click **Login** on each card.
-   - **If Claude / Codex CLI is installed**, a terminal window opens for the CLI's login flow.
-     - **Claude**: type `/login` and follow the browser sign-in flow.
-     - **Codex**: the `codex login` browser flow starts automatically.
-   - **If no CLI is installed**, your default browser opens the OAuth login page directly. After signing in, the tab shows "Login complete" and Headroom picks up the new credentials automatically.
-   You can also manage sessions from **Settings → Account**.
+   - By default, Headroom uses its built-in Browser OAuth flow. After signing in, the tab shows "Login complete" and Headroom picks up the new credentials automatically.
+   - You can switch each service to **CLI** or **Auto** from **Settings → Account**. Auto uses the CLI when available and falls back to Browser OAuth.
+   - For Claude CLI login, type `/login` in the opened terminal. Codex CLI starts `codex login` directly.
+   You can also log out and manage sessions from **Settings → Account**.
 
 ## Screens
 
@@ -83,7 +82,7 @@ Per-service buttons:
 Open with the ⚙ icon on the side rail.
 
 - **General** — language, always on top, enable/disable each service
-- **Account** — login/logout controls for Claude and Codex
+- **Account** — login/logout controls and per-service login method (Browser OAuth / CLI / Auto)
 - **Layout** — arrangement, per-service remaining/used, per-quota reset format
 - **Refresh** — normal interval (15 min default), Boost duration / interval (30 min / 1 min default)
 - **Thresholds** — yellow at 50%, red at 30% (configurable)
@@ -92,10 +91,10 @@ Open with the ⚙ icon on the side rail.
 
 The app reads OAuth tokens from `%USERPROFILE%\.claude\.credentials.json` (Claude Code) and
 `%USERPROFILE%\.codex\auth.json` (Codex), calls the respective usage APIs directly, and
-renders a custom dark UI. When a CLI is installed, Headroom defers credential writes to it.
-When no CLI is present, Headroom runs its own PKCE OAuth flow (system browser + localhost
-callback) and writes credentials in a CLI-compatible format. Refresh tokens are used to keep
-the access token alive without re-login. Settings are stored in
+renders a custom dark UI. Login method is configurable per service: Browser OAuth uses
+Headroom's PKCE flow (system browser + localhost callback), CLI launches the installed
+Claude/Codex CLI, and Auto preserves the old CLI-when-available behavior. Refresh tokens are used to keep
+the access token alive without re-login, and 429 responses trigger a backoff instead of retrying in a tight loop. Settings are stored in
 `%LOCALAPPDATA%\Headroom\settings.json`.
 
 ## Fixture mode

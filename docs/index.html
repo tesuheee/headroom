@@ -410,23 +410,26 @@
           <div>
             <h2>Headroom Architecture</h2>
             <p>
-              Headroom は Claude Code と Codex の使用量を OAuth トークンで直接 API から取得し、
+              Headroom は Claude Code と Codex の AI 使用量を OAuth トークンで直接 API から取得し、
               WinForms のカスタム描画で小さな常駐ウィジェットとして表示する Windows デスクトップアプリです。
-              CLI が入っている PC では CLI が保存したトークンを読み、入っていない PC では
-              Headroom 自身が PKCE OAuth フローで認証してトークンを保存します。
+              ログイン方法はサービスごとにブラウザ OAuth / CLI / 自動から選べます。
+              ブラウザ OAuth では Headroom 自身が PKCE OAuth フローで認証してトークンを保存し、
+              CLI ではインストール済み CLI のログインフローを起動します。
               リフレッシュトークンによるアクセストークンの自動更新も自前で行います。
             </p>
             <div class="chips">
               <span class="chip"><span class="dot" style="color: var(--api)"></span>Direct API</span>
               <span class="chip"><span class="dot" style="color: var(--claude)"></span>PKCE OAuth</span>
+              <span class="chip"><span class="dot" style="color: var(--codex)"></span>Login method settings</span>
               <span class="chip"><span class="dot" style="color: var(--settings)"></span>Local settings</span>
+              <span class="chip"><span class="dot" style="color: var(--warn)"></span>429 backoff</span>
               <span class="chip"><span class="dot" style="color: var(--fixture)"></span>Fixture verification</span>
               <span class="chip"><span class="dot" style="color: var(--danger)"></span>Quota state UI</span>
             </div>
           </div>
           <div class="system-map">
             <div class="stack">
-              <div class="node"><strong>WinForms App</strong><small>Program.cs / UsageForm / SettingsForm</small></div>
+              <div class="node"><strong>WinForms App</strong><small>src/*.cs (9 files) / UsageForm (partial class) / SettingsForm</small></div>
               <div class="node"><strong>OAuth Credential Files</strong><small>.claude/.credentials.json, .codex/auth.json</small></div>
               <div class="node"><strong>Usage APIs</strong><small>Anthropic OAuth usage, ChatGPT wham usage</small></div>
               <div class="node"><strong>Renderer</strong><small>Graphics, bars, badges, side rail, settings dialog</small></div>
@@ -437,7 +440,7 @@
 
       <section id="program-shape">
         <h2>Program Shape</h2>
-        <p>実装は単一の <code>Program.cs</code> にまとまっています。クラスの責務は明確に分かれています。</p>
+        <p>実装は <code>src/</code> 配下の9ファイルに分割されています（C# <code>partial class</code>）。クラスの責務は明確に分かれています。</p>
         <div class="grid-3">
           <div class="node api">
             <strong>Program / HeadroomOptions</strong>
@@ -453,7 +456,7 @@
           </div>
           <div class="node claude">
             <strong>ServiceState</strong>
-            <small>Claude / Codex それぞれの実行中状態、最終更新、Boost、バーアニメーション値を持ちます。</small>
+            <small>Claude / Codex それぞれの実行中状態、最終更新、429バックオフ、Boost、バーアニメーション値を持ちます。</small>
           </div>
           <div class="node warn">
             <strong>UsageData</strong>
@@ -461,7 +464,7 @@
           </div>
           <div class="node settings">
             <strong>WidgetSettings</strong>
-            <small>表示モード、言語、サイズ、閾値、更新間隔を <code>settings.json</code> に保存します。</small>
+            <small>表示モード、ログイン方法、言語、サイズ、閾値、更新間隔を <code>settings.json</code> に保存します。</small>
           </div>
         </div>
       </section>
@@ -493,22 +496,26 @@
           </div>
         </div>
         <div class="callout">
-          <strong>認証情報の書き込み:</strong> CLI（<code>claude</code> / <code>codex</code>）がインストールされている場合は、認証情報の書き込みは CLI に任せ、Headroom は読み取り専用です。CLI が無い場合は Headroom 自身が PKCE OAuth フローで取得し、CLI 互換形式で <code>.credentials.json</code> / <code>auth.json</code> に書き込みます。<br>
-          <strong>トークン更新:</strong> アクセストークン期限切れ時または 401 応答時に <code>refresh_token</code> で自動更新し、ファイルを上書きします。再ログインはほぼ発生しません。
+          <strong>認証情報の書き込み:</strong> ブラウザOAuthを選んだ場合は Headroom 自身が PKCE OAuth フローで取得し、CLI 互換形式で <code>.credentials.json</code> / <code>auth.json</code> に書き込みます。CLIを選んだ場合は <code>claude</code> または <code>codex login</code> を起動し、認証情報の作成はCLIに任せます。<br>
+          <strong>トークン更新:</strong> アクセストークン期限切れ時または 401 応答時に <code>refresh_token</code> で自動更新し、ファイルを上書きします。429応答では <code>Retry-After</code> または既定30分のバックオフを設定します。
         </div>
       </section>
 
       <section id="login-flow">
         <h2>Login Flow</h2>
-        <p>ログインボタンの動作は CLI 検出結果で分岐します。</p>
-        <div class="grid-2">
-          <div class="node codex">
-            <strong>CLI あり</strong>
-            <small><code>cmd.exe /k</code> で <code>claude</code> または <code>codex login</code> を起動。タイトルとプリバナーで「認証後はこのウィンドウを閉じてOK」を表示。</small>
-          </div>
+        <p>ログインボタンの動作は、サービスごとの <code>ClaudeLoginMethod</code> / <code>CodexLoginMethod</code> 設定で分岐します。初期値は <code>browser</code> です。</p>
+        <div class="grid-3">
           <div class="node claude">
-            <strong>CLI 無し（PKCE）</strong>
-            <small>PKCE verifier/challenge を生成 → <code>HttpListener</code> を <code>localhost:動的ポート</code> で開き、システム既定ブラウザで認可URLを開く → <code>/callback</code> 受信 → トークン交換 POST → 認証ファイルに保存。</small>
+            <strong>Browser OAuth</strong>
+            <small>PKCE verifier/challenge を生成 → <code>HttpListener</code> を localhost で開き、システム既定ブラウザで認可URLを開く → callback 受信 → トークン交換 POST → 認証ファイルに保存。</small>
+          </div>
+          <div class="node codex">
+            <strong>CLI</strong>
+            <small><code>cmd.exe /k</code> で <code>claude</code> または <code>codex login</code> を起動。CLI が見つからない場合は警告を出し、<code>login_required</code> に戻します。</small>
+          </div>
+          <div class="node settings">
+            <strong>Auto</strong>
+            <small>従来互換。CLI が見つかれば CLI、見つからなければ Browser OAuth を使います。</small>
           </div>
         </div>
         <table>
@@ -532,16 +539,17 @@
           <thead><tr><th>Trigger</th><th>処理</th><th>目的</th></tr></thead>
           <tbody>
             <tr><td><code>F5</code> / refresh icon</td><td><code>RefreshAllAsync</code> または単一サービス更新</td><td>今すぐ最新値を見る</td></tr>
-            <tr><td>Scheduler timer</td><td><code>MaybeRefreshAsync</code></td><td>通常間隔、Boost、リセット前後で自動更新</td></tr>
+            <tr><td>Scheduler timer</td><td><code>MaybeRefreshAsync</code></td><td>通常間隔、Boost、リセット前後で自動更新。1分以内のリセットは5秒、10分以内は15秒以上の間隔で確認。</td></tr>
             <tr><td>Credential watcher</td><td><code>OnClaudeCredentialChanged</code> / <code>OnCodexCredentialChanged</code></td><td>ログイン後に自動復帰</td></tr>
             <tr><td>Fixture watcher</td><td><code>OnFixtureChanged</code></td><td>JSON編集からスクリーンショット確認までを短くする</td></tr>
+            <tr><td>HTTP 429</td><td><code>ApplyRateLimit</code></td><td><code>Retry-After</code> または既定30分まで <code>rate_limited</code> として自動更新を止める</td></tr>
           </tbody>
         </table>
       </section>
 
       <section id="ui">
         <h2>UI Rendering</h2>
-        <p>メイン画面は標準コントロールではなく、<code>Graphics</code> で直接描画します。レイアウトは表示サービス数と横/縦設定で変わります。</p>
+        <p>メイン画面は標準コントロールではなく、<code>Graphics</code> で直接描画します。レイアウトは表示サービス数と横/縦設定で変わります。サイドレールはウィジェット全体へのホバーでフェードインし、外れるとフェードアウトします。</p>
         <div class="mini-ui">
           <div class="widget">
             <div class="quota-card">
@@ -562,6 +570,7 @@
           <span><i class="color" style="color: var(--claude)"></i>Claude accent</span>
           <span><i class="color" style="color: var(--danger)"></i>Limit state</span>
           <span><i class="color" style="color: #697281"></i>Locked by weekly quota</span>
+          <span><i class="color" style="color: #2d84eb"></i>Settings hover</span>
         </div>
       </section>
 
@@ -582,6 +591,7 @@
           <tbody>
             <tr><td>Language</td><td>設定画面とメイン画面のラベル。初期値は英語。</td></tr>
             <tr><td>ShowCodex / ShowClaude</td><td>1サービス表示または2サービス表示のレイアウトを決定。</td></tr>
+            <tr><td>ClaudeLoginMethod / CodexLoginMethod</td><td>サービスごとに Browser OAuth / CLI / Auto を選ぶ。初期値は Browser OAuth。</td></tr>
             <tr><td>LayoutMode</td><td>横並び / 縦並び。</td></tr>
             <tr><td>CodexShowUsed / ClaudeShowUsed</td><td>残量表示と使用量表示をサービスごとに切替。</td></tr>
             <tr><td>Warning / Critical thresholds</td><td>バー色を黄 / 赤に変える残量閾値。</td></tr>
@@ -617,7 +627,7 @@
           <tbody>
             <tr><td>Quota</td><td>通常 / warning / critical / exhausted</td><td>バー色、カード色、上限バッジ、リセット表示。</td></tr>
             <tr><td>Weekly lock</td><td>週次 0% + 5時間残あり</td><td>5時間行は使えそうに見せず、グレー化と週上限バッジを出す。</td></tr>
-            <tr><td>Auth</td><td>login_required / login_pending / ok / fetch_error</td><td><code>login_required</code> 時のみログインボタンを表示。<code>fetch_error</code>（一時的API不調）ではログインボタンを出さない。期限切れは refresh で透過的に解決し、ユーザー操作不要。</td></tr>
+            <tr><td>Auth</td><td>login_required / login_pending / ok / fetch_error / rate_limited</td><td><code>login_required</code> 時のみログインボタンを表示。<code>fetch_error</code>（一時的API不調）ではログインボタンを出さない。期限切れは refresh で透過的に解決し、429 は待機バッジとバックオフで扱う。</td></tr>
             <tr><td>Freshness</td><td>最新 / stale</td><td>古いデータは Stale バッジとカード色で分かる。</td></tr>
             <tr><td>Display</td><td>remaining / used</td><td>値の意味と閾値判定が反転しても見た目が破綻しない。</td></tr>
             <tr><td>Layout</td><td>single / horizontal / vertical</td><td>サイズ、余白、サイドレール、文字の収まり。</td></tr>
@@ -630,11 +640,11 @@
         <div class="grid-3">
           <div class="node settings">
             <strong>Settings</strong>
-            <small><code>%LOCALAPPDATA%\Headroom\settings.json</code><br>ウィンドウサイズ、言語、表示、閾値。</small>
+            <small><code>%LOCALAPPDATA%\Headroom\settings.json</code><br>ウィンドウサイズ、言語、表示、ログイン方法、閾値。</small>
           </div>
           <div class="node api">
             <strong>Credentials</strong>
-            <small><code>%USERPROFILE%\.claude\.credentials.json</code><br><code>%USERPROFILE%\.codex\auth.json</code><br>CLI 有り時は CLI 主導、CLI 無し時は Headroom が PKCE で取得・書き込み。リフレッシュは常に Headroom が行う。</small>
+            <small><code>%USERPROFILE%\.claude\.credentials.json</code><br><code>%USERPROFILE%\.codex\auth.json</code><br>Browser OAuth時は Headroom が PKCE で取得・書き込み。CLI時はCLI主導。リフレッシュは常に Headroom が行う。</small>
           </div>
           <div class="node warn">
             <strong>Debug logs</strong>
@@ -667,7 +677,8 @@
           <div class="callout">
             <strong>API変更に強くする:</strong>
             パーサーは現在 Regex ベースです。APIレスポンスの形が変わった場合は
-            <code>ParseClaudeApi</code> / <code>ParseCodexApi</code> と fixture を同時に更新します。
+            <code>src/UsageForm.Claude.cs</code> の <code>ParseClaudeApi</code> /
+            <code>src/UsageForm.Codex.cs</code> の <code>ParseCodexApi</code> と fixture を同時に更新します。
           </div>
           <div class="callout">
             <strong>UI回帰を潰す:</strong>
