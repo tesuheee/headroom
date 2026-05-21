@@ -45,14 +45,13 @@ namespace Headroom
 
         public static void Write(string path, ClaudeCredentials credentials, string[] scopes)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
             var root = Json.ParseObject(CredentialFiles.TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
             var oauth = Json.ObjectOrNew(root, "claudeAiOauth");
             oauth["accessToken"] = credentials.AccessToken ?? "";
             if (credentials.RefreshToken != null) oauth["refreshToken"] = credentials.RefreshToken;
             oauth["expiresAt"] = credentials.ExpiresAtMs;
             if (scopes != null) oauth["scopes"] = scopes;
-            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
+            FileWrites.WriteUtf8Atomic(path, Json.Serialize(root) + "\n");
         }
     }
 
@@ -90,7 +89,6 @@ namespace Headroom
 
         public static void Write(string path, CodexCredentials credentials)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
             var root = Json.ParseObject(CredentialFiles.TryReadFileWithRetry(path)) ?? new Dictionary<string, object>();
             root["auth_mode"] = "chatgpt";
             var tokens = Json.ObjectOrNew(root, "tokens");
@@ -100,7 +98,7 @@ namespace Headroom
             if (!string.IsNullOrEmpty(credentials.AccountId)) tokens["account_id"] = credentials.AccountId;
             if (credentials.ExpiresAtMs > 0) tokens["expires_at_ms"] = credentials.ExpiresAtMs;
             root["last_refresh"] = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
-            File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
+            FileWrites.WriteUtf8Atomic(path, Json.Serialize(root) + "\n");
         }
     }
 

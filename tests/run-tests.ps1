@@ -10,6 +10,7 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Sources = @(
   (Join-Path $Root "src\Models.cs"),
   (Join-Path $Root "src\DebugLog.cs"),
+  (Join-Path $Root "src\FileWrites.cs"),
   (Join-Path $Root "src\Json.cs"),
   (Join-Path $Root "src\CredentialStores.cs"),
   (Join-Path $Root "src\UsageParsers.cs"),
