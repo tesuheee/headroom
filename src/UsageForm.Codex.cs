@@ -81,55 +81,6 @@ namespace Headroom
             File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
         }
 
-        static string ConvertUnixSecondsToLegacyFormat(long unixSec)
-        {
-            try
-            {
-                long rounded = ((unixSec + 59) / 60) * 60;
-                var dto = DateTimeOffset.FromUnixTimeSeconds(rounded);
-                return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
-            }
-            catch { return null; }
-        }
-
-        static UsageData ParseCodexApi(string json)
-        {
-            var data = new UsageData { Name = "Codex", Source = "Codex API", UpdatedAt = DateTime.Now };
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                data.Status = "no_data";
-                return data;
-            }
-
-            var root = Json.ParseObject(json);
-            if (root == null)
-            {
-                data.Status = "no_data";
-                return data;
-            }
-
-            var primary = Json.Object(root, "primary_window");
-            if (primary != null)
-            {
-                data.FiveHourUsed = Json.Double(primary, "used_percent");
-                long? reset = Json.Long(primary, "reset_at");
-                if (reset.HasValue && reset.Value > 0)
-                    data.FiveHourReset = ConvertUnixSecondsToLegacyFormat(reset.Value);
-            }
-
-            var secondary = Json.Object(root, "secondary_window");
-            if (secondary != null)
-            {
-                data.WeeklyUsed = Json.Double(secondary, "used_percent");
-                long? reset = Json.Long(secondary, "reset_at");
-                if (reset.HasValue && reset.Value > 0)
-                    data.WeeklyReset = ConvertUnixSecondsToLegacyFormat(reset.Value);
-            }
-
-            if (!data.HasAnyValue()) data.Status = "no_data";
-            return data;
-        }
-
         static string ExtractAccountIdFromIdToken(string idToken)
         {
             if (string.IsNullOrEmpty(idToken)) return null;
@@ -171,7 +122,7 @@ namespace Headroom
             {
                 if (HeadroomOptions.FixtureMode)
                 {
-                    LoadFixture(service, "Codex", "codex.json", ParseCodexApi);
+                    LoadFixture(service, "Codex", "codex.json", UsageParsers.ParseCodexApi);
                     return;
                 }
 
@@ -230,7 +181,7 @@ namespace Headroom
                             }
                             string json = await resp.Content.ReadAsStringAsync();
                             WriteDebug("codex-api.txt", json);
-                            service.Data = ParseCodexApi(json);
+                            service.Data = UsageParsers.ParseCodexApi(json);
                             service.Status = service.Data.Status;
                             service.RateLimitedUntil = null;
                             service.LastRefresh = DateTime.Now;

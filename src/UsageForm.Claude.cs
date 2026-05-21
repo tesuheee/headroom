@@ -68,51 +68,6 @@ namespace Headroom
             File.WriteAllText(path, Json.Serialize(root) + "\n", new System.Text.UTF8Encoding(false));
         }
 
-        static string ConvertIsoToLegacyFormat(string iso)
-        {
-            DateTimeOffset dto;
-            if (DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture,
-                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out dto))
-                return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
-            return iso;
-        }
-
-        static UsageData ParseClaudeApi(string json)
-        {
-            var data = new UsageData { Name = "Claude", Source = "Claude API", UpdatedAt = DateTime.Now };
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                data.Status = "no_data";
-                return data;
-            }
-
-            var root = Json.ParseObject(json);
-            if (root == null)
-            {
-                data.Status = "no_data";
-                return data;
-            }
-
-            var five = Json.Object(root, "five_hour");
-            if (five != null)
-            {
-                data.FiveHourUsed = Json.Double(five, "utilization");
-                string reset = Json.String(five, "resets_at");
-                if (!string.IsNullOrEmpty(reset)) data.FiveHourReset = ConvertIsoToLegacyFormat(reset);
-            }
-
-            var week = Json.Object(root, "seven_day");
-            if (week != null)
-            {
-                data.WeeklyUsed = Json.Double(week, "utilization");
-                string reset = Json.String(week, "resets_at");
-                if (!string.IsNullOrEmpty(reset)) data.WeeklyReset = ConvertIsoToLegacyFormat(reset);
-            }
-
-            if (!data.HasAnyValue()) data.Status = "no_data";
-            return data;
-        }
-
         async Task RefreshClaudeViaApiAsync(ServiceState service, bool manual)
         {
             if (service.ManuallyLoggedOut)
@@ -129,7 +84,7 @@ namespace Headroom
             {
                 if (HeadroomOptions.FixtureMode)
                 {
-                    LoadFixture(service, "Claude", "claude.json", ParseClaudeApi);
+                    LoadFixture(service, "Claude", "claude.json", UsageParsers.ParseClaudeApi);
                     return;
                 }
 
@@ -199,7 +154,7 @@ namespace Headroom
                             }
                             string json = await resp.Content.ReadAsStringAsync();
                             WriteDebug("claude-api.txt", json);
-                            service.Data = ParseClaudeApi(json);
+                            service.Data = UsageParsers.ParseClaudeApi(json);
                             service.Status = service.Data.Status;
                             service.RateLimitedUntil = null;
                             service.LastRefresh = DateTime.Now;

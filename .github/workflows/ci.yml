@@ -22,3 +22,7 @@ jobs:
       - name: Build fixture binary
         shell: pwsh
         run: .\build.ps1 -DebugFixture
+
+      - name: Test parsers
+        shell: pwsh
+        run: .\tests\run-tests.ps1
