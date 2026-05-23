@@ -57,7 +57,10 @@ namespace Headroom
                 return data;
             }
 
-            var primary = Json.Object(root, "primary_window");
+            var rateLimit = Json.Object(root, "rate_limit");
+            var searchRoot = rateLimit ?? root;
+
+            var primary = Json.Object(searchRoot, "primary_window");
             if (primary != null)
             {
                 data.FiveHourUsed = Json.Double(primary, "used_percent");
@@ -66,7 +69,7 @@ namespace Headroom
                     data.FiveHourReset = ConvertUnixSecondsToLegacyFormat(reset.Value);
             }
 
-            var secondary = Json.Object(root, "secondary_window");
+            var secondary = Json.Object(searchRoot, "secondary_window");
             if (secondary != null)
             {
                 data.WeeklyUsed = Json.Double(secondary, "used_percent");
