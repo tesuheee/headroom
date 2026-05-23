@@ -12,7 +12,7 @@ Headroom is a compact Windows desktop AI usage monitor for Claude Code and Codex
 ## Features
 
 - **Side-by-side usage monitoring** — Claude Code and Codex, both 5-hour and weekly quotas, in one floating widget
-- **Flexible display** — per-service Remaining / Used switch, wide or tall layout, reset shown as countdown or clock time
+- **Flexible display** — per-service Remaining / Used switch, wide or tall layout, Claude / Codex service order, reset shown as countdown or clock time
 - **Low-quota warnings** — each quota row turns yellow or red at configurable thresholds
 - **Account controls** — log in or log out of Claude Code / Codex from the Settings dialog
 - **OAuth-aware status** — reads CLI-compatible credentials, refreshes tokens, and backs off when the usage API returns rate limits
@@ -43,7 +43,7 @@ Disable a service from **Settings → General** to compact down to one card.
 
 ![Vertical layout](docs/images/03-layout-vertical.png)
 
-Switch between wide and tall layouts from **Settings → Layout**.
+Switch between wide and tall layouts and choose the Claude / Codex service order from **Settings → Layout**.
 
 ### Display modes
 
@@ -83,7 +83,7 @@ Open with the ⚙ icon on the side rail.
 
 - **General** — language, always on top, enable/disable each service
 - **Account** — login/logout controls and per-service login method (Browser OAuth / CLI / Auto)
-- **Layout** — arrangement, per-service remaining/used, per-quota reset format
+- **Layout** — arrangement, service order, per-service remaining/used, per-quota reset format
 - **Refresh** — normal interval (15 min default), Boost duration / interval (30 min / 1 min default)
 - **Thresholds** — yellow at 50%, red at 30% (configurable)
 
@@ -115,7 +115,7 @@ responses. Headroom watches those files and refreshes automatically when they ch
 .\build.ps1
 ```
 
-Windows + .NET Framework 4 required (csc.exe path is hard-coded in `build.ps1`).
+Windows + .NET Framework 4 required (MSBuild.exe path is hard-coded in `build.ps1`).
 
 To create a release archive:
 
@@ -123,4 +123,4 @@ To create a release archive:
 .\build.ps1 -Version 2.0.0
 ```
 
-The archive is written to `releases/Headroom-vX.Y.Z.zip`.
+The archive is written to `releases/Headroom-vX.Y.Z.zip`. The `-Version` value is embedded in the exe version metadata and shown in Settings. Plain local `.\build.ps1` builds show `dev`.

@@ -44,6 +44,7 @@ namespace Headroom
                 settings.ShowCodex = ReadBool(root, "showCodex", settings.ShowCodex);
                 settings.ShowClaude = ReadBool(root, "showClaude", settings.ShowClaude);
                 settings.LayoutMode = NormalizeLayoutMode(ReadString(root, "layoutMode", settings.LayoutMode));
+                settings.ServiceOrder = NormalizeServiceOrder(ReadString(root, "serviceOrder", settings.ServiceOrder));
                 settings.CodexShowUsed = ReadBool(root, "codexShowUsed", settings.CodexShowUsed);
                 settings.ClaudeShowUsed = ReadBool(root, "claudeShowUsed", settings.ClaudeShowUsed);
                 settings.CodexLoggedOut = ReadBool(root, "codexLoggedOut", settings.CodexLoggedOut);
@@ -79,6 +80,7 @@ namespace Headroom
                     { "showCodex", settings.ShowCodex },
                     { "showClaude", settings.ShowClaude },
                     { "layoutMode", settings.LayoutMode },
+                    { "serviceOrder", settings.ServiceOrder },
                     { "codexShowUsed", settings.CodexShowUsed },
                     { "claudeShowUsed", settings.ClaudeShowUsed },
                     { "codexLoggedOut", settings.CodexLoggedOut },
@@ -124,6 +126,11 @@ namespace Headroom
         static string NormalizeLayoutMode(string value)
         {
             return string.Equals(value, "vertical", StringComparison.OrdinalIgnoreCase) ? "vertical" : "horizontal";
+        }
+
+        static string NormalizeServiceOrder(string value)
+        {
+            return string.Equals(value, "codex-claude", StringComparison.OrdinalIgnoreCase) ? "codex-claude" : "claude-codex";
         }
 
         static string NormalizeLoginMethod(string value)

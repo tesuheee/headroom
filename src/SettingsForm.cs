@@ -16,7 +16,7 @@ namespace Headroom
         readonly bool fixtureMode;
         bool _updatingLanguage;
         DarkScrollContainer scrollContainer;
-        Label locationsLabel;
+        Label versionLocLabel, settingsLocLabel, authLocLabel, logsLocLabel;
         bool _resizing;
         Point _resizeStart;
         Size  _resizeStartSize;
@@ -26,6 +26,7 @@ namespace Headroom
 
         readonly DarkComboBox language = new DarkComboBox();
         readonly DarkComboBox layoutMode = new DarkComboBox();
+        readonly DarkComboBox serviceOrder = new DarkComboBox();
         readonly DarkComboBox codexMode = new DarkComboBox();
         readonly DarkComboBox claudeMode = new DarkComboBox();
         readonly DarkComboBox fiveResetMode = new DarkComboBox();
@@ -187,6 +188,7 @@ namespace Headroom
             AddAccountRow(leftCard, "Codex",  codexLoggedIn(),  logoutCodex,  ref leftY, false);
             AddSection(leftCard, "レイアウト", "Layout", ref leftY);
             AddRow(leftCard, "配置", "Arrangement", "", "", layoutMode, ref leftY);
+            AddRow(leftCard, "表示順", "Service order", "先頭のカード", "First card", serviceOrder, ref leftY);
             AddRow(leftCard, "Codex トークン表示", "Codex token display", "残量 / 使用量", "remaining / used", codexMode, ref leftY);
             AddRow(leftCard, "Claude トークン表示", "Claude token display", "残量 / 使用量", "remaining / used", claudeMode, ref leftY);
             AddRow(leftCard, "5時間リセット表示", "5h reset display", "", "", fiveResetMode, ref leftY);
@@ -202,6 +204,7 @@ namespace Headroom
             AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref rightY, 1, 99);
 
             SetupCombo(layoutMode, settings.LayoutMode, new[] { T("横", "Wide"), T("縦", "Tall") });
+            SetupCombo(serviceOrder, settings.ServiceOrder, new[] { "Claude / Codex", "Codex / Claude" });
             SetupCombo(codexMode, settings.CodexShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
             SetupCombo(claudeMode, settings.ClaudeShowUsed ? "used" : "remaining", new[] { T("残量", "Remaining"), T("使用量", "Used") });
             SetupCombo(fiveResetMode, settings.FiveHourResetMode, new[] { T("リセット時刻", "Clock time"), T("残り時間", "Time left") });
@@ -216,22 +219,46 @@ namespace Headroom
             rightCard.Height = contentH;
             vDivider.Height = contentH;
 
-            locationsLabel = new Label
-            {
-                Location = new Point(24, contentH + 4),
-                Width = body.Width - 48,
-                Height = 48,
-                Padding = new Padding(2, 0, 2, 0),
-                Font = new Font("Yu Gothic UI", 8f),
-                ForeColor = Color.FromArgb(100, 106, 120),
-                BackColor = Color.Transparent,
-                Cursor = Cursors.Hand
-            };
-            UpdateLocationsLabel();
-            locationsLabel.Click += (s, e) => OpenSettingsLocation();
-            body.Controls.Add(locationsLabel);
+            var locFont   = new Font("Yu Gothic UI", 9f);
+            var locNormal = Color.FromArgb(100, 106, 120);
+            var locHover  = Color.FromArgb(170, 178, 200);
 
-            int totalContentH = locationsLabel.Bottom + 4;
+            Func<int, Label> makeLocLabel = offsetY =>
+            {
+                var lbl = new Label
+                {
+                    Location  = new Point(24, contentH + 4 + offsetY),
+                    Width     = body.Width - 48,
+                    Height    = 17,
+                    Padding   = new Padding(2, 0, 2, 0),
+                    Font      = locFont,
+                    ForeColor = locNormal,
+                    BackColor = Color.Transparent,
+                    Cursor    = Cursors.Hand
+                };
+                lbl.MouseEnter += (s, e) => lbl.ForeColor = locHover;
+                lbl.MouseLeave += (s, e) => lbl.ForeColor = locNormal;
+                return lbl;
+            };
+
+            versionLocLabel = makeLocLabel(0);
+            body.Controls.Add(versionLocLabel);
+
+            settingsLocLabel = makeLocLabel(19);
+            settingsLocLabel.Click += (s, e) => OpenLocation(WidgetSettings.SettingsPath, selectFile: true);
+            body.Controls.Add(settingsLocLabel);
+
+            authLocLabel = makeLocLabel(38);
+            authLocLabel.Click += (s, e) => OpenLocation(UsageForm.ClaudeCredentialPath, selectFile: true);
+            body.Controls.Add(authLocLabel);
+
+            logsLocLabel = makeLocLabel(57);
+            logsLocLabel.Click += (s, e) => OpenLocation(UsageForm.DebugDirectory, selectFile: false);
+            body.Controls.Add(logsLocLabel);
+
+            UpdateLocationsLabel();
+
+            int totalContentH = logsLocLabel.Bottom + 4;
             scrollContainer.SetContentHeight(totalContentH);
             scrollContainer.AttachWheelToChildren();
 
@@ -496,6 +523,7 @@ namespace Headroom
             box.Items.Clear();
             box.Items.AddRange(items);
             if (box == layoutMode)                              box.SelectedIndex = string.Equals(value, "vertical",  StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            else if (box == serviceOrder)                       box.SelectedIndex = string.Equals(value, "codex-claude", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == codexMode || box == claudeMode)    box.SelectedIndex = string.Equals(value, "used",      StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == fiveResetMode || box == weeklyResetMode) box.SelectedIndex = string.Equals(value, "relative", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             else if (box == claudeLoginMethod || box == codexLoginMethod) box.SelectedIndex = LoginMethodIndex(value);
@@ -547,21 +575,32 @@ namespace Headroom
 
         void UpdateLocationsLabel()
         {
-            if (locationsLabel == null) return;
-            locationsLabel.Text =
-                T("設定ファイル: ", "Settings: ") + WidgetSettings.SettingsPath + "\r\n" +
-                T("認証ファイル: ", "Auth: ") + UsageForm.ClaudeCredentialPath + " / " + UsageForm.CodexCredentialPath + "\r\n" +
-                T("ログ: ", "Logs: ") + UsageForm.DebugDirectory;
-            tooltips.SetToolTip(locationsLabel, T("クリックで設定ファイルを選択表示", "Click to reveal the settings file"));
+            if (versionLocLabel == null) return;
+            versionLocLabel.Text  = T("バージョン: ", "Version: ") + AppInfo.DisplayVersion;
+            settingsLocLabel.Text = T("設定ファイル: ", "Settings: ") + WidgetSettings.SettingsPath;
+            authLocLabel.Text     = T("認証ファイル: ", "Auth: ") + UsageForm.ClaudeCredentialPath + " / " + UsageForm.CodexCredentialPath;
+            logsLocLabel.Text     = T("ログ: ", "Logs: ") + UsageForm.DebugDirectory;
+            tooltips.SetToolTip(settingsLocLabel, T("クリックで設定ファイルを選択表示", "Click to reveal the settings file"));
+            tooltips.SetToolTip(authLocLabel,     T("クリックで認証ファイルを選択表示", "Click to reveal the auth file"));
+            tooltips.SetToolTip(logsLocLabel,     T("クリックでログフォルダを開く",     "Click to open the logs folder"));
         }
 
-        void OpenSettingsLocation()
+        void OpenLocation(string path, bool selectFile)
         {
             try
             {
-                Directory.CreateDirectory(WidgetSettings.SettingsDirectory);
-                if (!File.Exists(WidgetSettings.SettingsPath)) settings.Save();
-                Process.Start("explorer.exe", "/select,\"" + WidgetSettings.SettingsPath + "\"");
+                if (selectFile)
+                {
+                    string dir = Path.GetDirectoryName(path);
+                    Directory.CreateDirectory(dir);
+                    if (path == WidgetSettings.SettingsPath && !File.Exists(path)) settings.Save();
+                    Process.Start("explorer.exe", "/select,\"" + path + "\"");
+                }
+                else
+                {
+                    Directory.CreateDirectory(path);
+                    Process.Start("explorer.exe", "\"" + path + "\"");
+                }
             }
             catch { }
         }
@@ -598,6 +637,7 @@ namespace Headroom
             claudeLoginMethod.SelectedIndexChanged += apply;
             codexLoginMethod.SelectedIndexChanged += apply;
             layoutMode.SelectedIndexChanged += apply;
+            serviceOrder.SelectedIndexChanged += apply;
             codexMode.SelectedIndexChanged += apply;
             claudeMode.SelectedIndexChanged += apply;
             fiveResetMode.SelectedIndexChanged += apply;
@@ -610,6 +650,7 @@ namespace Headroom
         void ReloadComboItems()
         {
             int layoutSel   = layoutMode.SelectedIndex;
+            int orderSel    = serviceOrder.SelectedIndex;
             int codexSel    = codexMode.SelectedIndex;
             int claudeSel   = claudeMode.SelectedIndex;
             int fiveSel     = fiveResetMode.SelectedIndex;
@@ -623,6 +664,10 @@ namespace Headroom
             layoutMode.Items.Clear();
             layoutMode.Items.AddRange(new[] { T("横", "Wide"), T("縦", "Tall") });
             layoutMode.SelectedIndex = Math.Max(0, Math.Min(1, layoutSel));
+
+            serviceOrder.Items.Clear();
+            serviceOrder.Items.AddRange(new[] { "Claude / Codex", "Codex / Claude" });
+            serviceOrder.SelectedIndex = Math.Max(0, Math.Min(1, orderSel));
 
             codexMode.Items.Clear();
             codexMode.Items.AddRange(new[] { T("残量", "Remaining"), T("使用量", "Used") });
@@ -689,6 +734,7 @@ namespace Headroom
             settings.ClaudeLoginMethod = LoginMethodValue(claudeLoginMethod.SelectedIndex);
             settings.CodexLoginMethod = LoginMethodValue(codexLoginMethod.SelectedIndex);
             settings.LayoutMode = layoutMode.SelectedIndex == 1 ? "vertical" : "horizontal";
+            settings.ServiceOrder = serviceOrder.SelectedIndex == 1 ? "codex-claude" : "claude-codex";
             settings.CodexShowUsed = codexMode.SelectedIndex == 1;
             settings.ClaudeShowUsed = claudeMode.SelectedIndex == 1;
             settings.FiveHourResetMode = fiveResetMode.SelectedIndex == 1 ? "relative" : "time";

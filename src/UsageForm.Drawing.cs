@@ -51,8 +51,17 @@ namespace Headroom
         List<Tuple<ServiceState, string>> VisibleServices()
         {
             var items = new List<Tuple<ServiceState, string>>();
-            if (settings.ShowCodex) items.Add(Tuple.Create(codex, "codex"));
-            if (settings.ShowClaude) items.Add(Tuple.Create(claude, "claude"));
+            bool codexFirst = string.Equals(settings.ServiceOrder, "codex-claude", StringComparison.OrdinalIgnoreCase);
+            if (codexFirst)
+            {
+                if (settings.ShowCodex) items.Add(Tuple.Create(codex, "codex"));
+                if (settings.ShowClaude) items.Add(Tuple.Create(claude, "claude"));
+            }
+            else
+            {
+                if (settings.ShowClaude) items.Add(Tuple.Create(claude, "claude"));
+                if (settings.ShowCodex) items.Add(Tuple.Create(codex, "codex"));
+            }
             if (items.Count == 0) items.Add(Tuple.Create(claude, "claude"));
             return items;
         }
