@@ -26,13 +26,18 @@ namespace Headroom
         [DllImport("gdi32.dll",  ExactSpelling = true)] static extern bool    DeleteDC(IntPtr hDC);
         [DllImport("gdi32.dll",  ExactSpelling = true)] static extern IntPtr  SelectObject(IntPtr hDC, IntPtr hObj);
         [DllImport("gdi32.dll",  ExactSpelling = true)] static extern bool    DeleteObject(IntPtr hObj);
+        [DllImport("gdi32.dll",  ExactSpelling = true)] static extern IntPtr  CreateDIBSection(IntPtr hdc, ref BitmapInfo pbmi, uint usage, out IntPtr ppvBits, IntPtr hSection, uint offset);
 
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential)]
         struct BlendFunction { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential)]
         struct LayeredPoint   { public int X, Y; }
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential)]
         struct LayeredSize    { public int cx, cy; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct BitmapInfoHeader { public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct BitmapInfo { public BitmapInfoHeader bmiHeader; public int bmiColors; }
 
         const int WmNcLButtonDown = 0xA1;
         const int HtCaption = 0x2;
@@ -141,7 +146,7 @@ namespace Headroom
                 if (paintSubtick == 0) spinnerFrame = (spinnerFrame + 1) % 4;
                 UpdateBarAnimation(codex,  settings.CodexShowUsed);
                 UpdateBarAnimation(claude, settings.ClaudeShowUsed);
-                Invalidate();
+                RenderLayered();
             };
             paintTimer.Start();
 
@@ -183,30 +188,37 @@ namespace Headroom
         void RenderLayered()
         {
             if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
-            using (var bmp = new System.Drawing.Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            IntPtr screenDC = GetDC(IntPtr.Zero);
+            IntPtr memDC    = CreateCompatibleDC(screenDC);
+            IntPtr hBmp = IntPtr.Zero, oldBmp = IntPtr.Zero;
+            try
             {
+                var bi = new BitmapInfo();
+                bi.bmiHeader.biSize     = Marshal.SizeOf(typeof(BitmapInfoHeader));
+                bi.bmiHeader.biWidth    = Width;
+                bi.bmiHeader.biHeight   = -Height; // top-down
+                bi.bmiHeader.biPlanes   = 1;
+                bi.bmiHeader.biBitCount = 32;
+                // biCompression = 0 (BI_RGB)
+                IntPtr ppvBits;
+                hBmp   = CreateDIBSection(memDC, ref bi, 0, out ppvBits, IntPtr.Zero, 0);
+                oldBmp = SelectObject(memDC, hBmp);
+
+                // Draw directly into the DIB section as pre-multiplied alpha
+                using (var bmp = new System.Drawing.Bitmap(Width, Height, Width * 4, System.Drawing.Imaging.PixelFormat.Format32bppPArgb, ppvBits))
                 using (var g = System.Drawing.Graphics.FromImage(bmp))
                     PaintContent(g);
 
-                IntPtr screenDC = GetDC(IntPtr.Zero);
-                IntPtr memDC    = CreateCompatibleDC(screenDC);
-                IntPtr hBmp     = IntPtr.Zero;
-                IntPtr oldBmp   = IntPtr.Zero;
-                try
-                {
-                    hBmp   = bmp.GetHbitmap(Color.FromArgb(0));
-                    oldBmp = SelectObject(memDC, hBmp);
-                    var size   = new LayeredSize    { cx = Width, cy = Height };
-                    var srcPt  = new LayeredPoint   { X = 0, Y = 0 };
-                    var blend  = new BlendFunction  { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
-                    UpdateLayeredWindow(Handle, screenDC, IntPtr.Zero, ref size, memDC, ref srcPt, 0, ref blend, 2); // ULW_ALPHA
-                }
-                finally
-                {
-                    if (hBmp != IntPtr.Zero) { SelectObject(memDC, oldBmp); DeleteObject(hBmp); }
-                    DeleteDC(memDC);
-                    ReleaseDC(IntPtr.Zero, screenDC);
-                }
+                var sz    = new LayeredSize  { cx = Width, cy = Height };
+                var srcPt = new LayeredPoint { X = 0, Y = 0 };
+                var blend = new BlendFunction { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
+                UpdateLayeredWindow(Handle, screenDC, IntPtr.Zero, ref sz, memDC, ref srcPt, 0, ref blend, 2); // ULW_ALPHA
+            }
+            finally
+            {
+                if (hBmp != IntPtr.Zero) { SelectObject(memDC, oldBmp); DeleteObject(hBmp); }
+                DeleteDC(memDC);
+                ReleaseDC(IntPtr.Zero, screenDC);
             }
         }
 
