@@ -94,8 +94,7 @@ namespace Headroom
         {
             try
             {
-                long rounded = ((unixSec + 59) / 60) * 60;
-                var dto = DateTimeOffset.FromUnixTimeSeconds(rounded);
+                var dto = DateTimeOffset.FromUnixTimeSeconds(unixSec);
                 return dto.ToLocalTime().ToString("yyyy/M/d H:mm", CultureInfo.InvariantCulture);
             }
             catch { return null; }
