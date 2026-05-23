@@ -1,6 +1,5 @@
 packages/
 bin/
-debug/
 obj/
 releases/
 .vs/
@@ -14,13 +13,23 @@ settings.json
 
 # IDE
 .idea/
+_ReSharper*/
 *.user
 *.suo
+*.DotSettings.user
 
 # OS-generated
 Thumbs.db
 desktop.ini
 
+# Certificates / keys
+*.cer
+*.pfx
+*.p12
+*.snk
+
 # Backups / temp
 *.bak
 *.tmp
+*.orig
+*.log
