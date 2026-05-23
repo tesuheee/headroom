@@ -113,6 +113,7 @@ namespace Headroom
         public bool ShowCodex = true;
         public bool ShowClaude = true;
         public string LayoutMode = "horizontal";
+        public string ServiceOrder = "claude-codex";
         public bool CodexShowUsed = false;
         public bool ClaudeShowUsed = false;
         public bool CodexLoggedOut = false;
@@ -175,6 +176,7 @@ namespace Headroom
             ShowCodex = other.ShowCodex;
             ShowClaude = other.ShowClaude;
             LayoutMode = other.LayoutMode;
+            ServiceOrder = other.ServiceOrder;
             CodexShowUsed = other.CodexShowUsed;
             ClaudeShowUsed = other.ClaudeShowUsed;
             CodexLoggedOut = other.CodexLoggedOut;

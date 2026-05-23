@@ -28,6 +28,7 @@ namespace Headroom
             string path = Path.Combine(dir, "missing", "settings.json");
             var settings = SettingsStore.Load(path, null);
             Equal("en", settings.Language, "default language");
+            Equal("claude-codex", settings.ServiceOrder, "default service order");
             True(File.Exists(path), "default settings file created");
         }
 
@@ -46,6 +47,7 @@ namespace Headroom
                 "\"showCodex\":false," +
                 "\"showClaude\":true," +
                 "\"layoutMode\":\"vertical\"," +
+                "\"serviceOrder\":\"codex-claude\"," +
                 "\"codexLoginMethod\":\"auto\"," +
                 "\"claudeLoginMethod\":\"cli\"," +
                 "\"fiveHourResetMode\":\"time\"," +
@@ -66,6 +68,7 @@ namespace Headroom
             True(!settings.ShowCodex, "show codex");
             True(settings.ShowClaude, "show claude");
             Equal("vertical", settings.LayoutMode, "layout");
+            Equal("codex-claude", settings.ServiceOrder, "service order");
             Equal("auto", settings.CodexLoginMethod, "codex login");
             Equal("cli", settings.ClaudeLoginMethod, "claude login");
             Equal("time", settings.FiveHourResetMode, "5h reset mode");
