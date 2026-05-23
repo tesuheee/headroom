@@ -13,11 +13,14 @@ namespace Headroom
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            var g = e.Graphics;
+            RenderLayered();
+        }
+
+        void PaintContent(Graphics g)
+        {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-            g.Clear(Color.Black);
+            g.Clear(Color.Transparent);
             hits.Clear();
             silentHits.Clear();
 

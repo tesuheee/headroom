@@ -362,8 +362,14 @@ namespace Headroom
         const int WM_NCHITTEST = 0x84;
         const int HTCAPTION = 2;
 
+        protected override CreateParams CreateParams
+        {
+            get { var cp = base.CreateParams; cp.ExStyle |= 0x02000000; return cp; } // WS_EX_COMPOSITED
+        }
+
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x14) { m.Result = IntPtr.Zero; return; } // WM_ERASEBKGND: suppress
             base.WndProc(ref m);
             if (m.Msg == WM_NCHITTEST && m.Result == (IntPtr)1)
             {

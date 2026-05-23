@@ -18,6 +18,22 @@ namespace Headroom
         [DllImport("user32.dll", EntryPoint = "SendMessage")]
         static extern IntPtr SendMessageIcon(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst, ref LayeredSize psize, IntPtr hdcSrc, ref LayeredPoint pptSrc, uint crKey, [In] ref BlendFunction pblend, uint dwFlags);
+        [DllImport("user32.dll", ExactSpelling = true)] static extern IntPtr  GetDC(IntPtr hWnd);
+        [DllImport("user32.dll", ExactSpelling = true)] static extern int     ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [DllImport("gdi32.dll",  ExactSpelling = true)] static extern IntPtr  CreateCompatibleDC(IntPtr hDC);
+        [DllImport("gdi32.dll",  ExactSpelling = true)] static extern bool    DeleteDC(IntPtr hDC);
+        [DllImport("gdi32.dll",  ExactSpelling = true)] static extern IntPtr  SelectObject(IntPtr hDC, IntPtr hObj);
+        [DllImport("gdi32.dll",  ExactSpelling = true)] static extern bool    DeleteObject(IntPtr hObj);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct BlendFunction { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct LayeredPoint   { public int X, Y; }
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct LayeredSize    { public int cx, cy; }
+
         const int WmNcLButtonDown = 0xA1;
         const int HtCaption = 0x2;
         const float LabelFontSize   = 10.8f;
@@ -75,10 +91,7 @@ namespace Headroom
             Height = settings.Height;
             ApplyLayoutMinimumSize();
             FormBorderStyle = FormBorderStyle.None;
-            BackColor = Color.Black;
-            TransparencyKey = Color.Black;
             TopMost = settings.AlwaysOnTop;
-            DoubleBuffered = true;
             KeyPreview = true;
             ShowInTaskbar = true;
 
@@ -154,6 +167,47 @@ namespace Headroom
                 try { if (claudeCredWatcher != null) claudeCredWatcher.Dispose(); } catch { }
                 try { if (codexCredWatcher  != null) codexCredWatcher.Dispose();  } catch { }
             };
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get { var cp = base.CreateParams; cp.ExStyle |= 0x80000; return cp; } // WS_EX_LAYERED
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == 0x14) { m.Result = IntPtr.Zero; return; } // WM_ERASEBKGND: suppress
+            base.WndProc(ref m);
+        }
+
+        void RenderLayered()
+        {
+            if (!IsHandleCreated || Width <= 0 || Height <= 0) return;
+            using (var bmp = new System.Drawing.Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                    PaintContent(g);
+
+                IntPtr screenDC = GetDC(IntPtr.Zero);
+                IntPtr memDC    = CreateCompatibleDC(screenDC);
+                IntPtr hBmp     = IntPtr.Zero;
+                IntPtr oldBmp   = IntPtr.Zero;
+                try
+                {
+                    hBmp   = bmp.GetHbitmap(Color.FromArgb(0));
+                    oldBmp = SelectObject(memDC, hBmp);
+                    var size   = new LayeredSize    { cx = Width, cy = Height };
+                    var srcPt  = new LayeredPoint   { X = 0, Y = 0 };
+                    var blend  = new BlendFunction  { BlendOp = 0, BlendFlags = 0, SourceConstantAlpha = 255, AlphaFormat = 1 };
+                    UpdateLayeredWindow(Handle, screenDC, IntPtr.Zero, ref size, memDC, ref srcPt, 0, ref blend, 2); // ULW_ALPHA
+                }
+                finally
+                {
+                    if (hBmp != IntPtr.Zero) { SelectObject(memDC, oldBmp); DeleteObject(hBmp); }
+                    DeleteDC(memDC);
+                    ReleaseDC(IntPtr.Zero, screenDC);
+                }
+            }
         }
 
         async Task RunScheduledRefreshAsync()
@@ -585,6 +639,7 @@ namespace Headroom
                 SendMessageIcon(Handle, 0x80, new IntPtr(1), icoBig.Handle);
             }
             catch { }
+            RenderLayered();
         }
     }
 }
