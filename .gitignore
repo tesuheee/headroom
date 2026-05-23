@@ -1,26 +1,58 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Rr]eleases/
+[Pp]ublish/
+x64/
+x86/
+TestResults/
 packages/
-bin/
-obj/
-releases/
-.vs/
-*.zip
-*.nupkg
+
+# Build artifacts
+*.dll
+*.exe
 *.pdb
-settings.json
+*.binlog
+*.nupkg
+*.snupkg
+*.zip
 
-.cert-thumbprint
-.claude/
+# Local app state / secrets
+/settings.json
+/.cert-thumbprint
+/.claude/
+/.codex/
+/.headroom/
+/.headroom-fixture/
+.env
+.env.*
+!.env.example
+!.env.*.example
 
-# IDE
+# IDE / editor
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
 .idea/
 _ReSharper*/
 *.user
+*.rsuser
 *.suo
 *.DotSettings.user
+*.userosscache
+*.sln.docstates
 
 # OS-generated
 Thumbs.db
-desktop.ini
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
 
 # Certificates / keys
 *.cer
@@ -28,8 +60,10 @@ desktop.ini
 *.p12
 *.snk
 
-# Backups / temp
+# Logs / backups / temp
+*.log
 *.bak
 *.tmp
+*.temp
+*.swp
 *.orig
-*.log
