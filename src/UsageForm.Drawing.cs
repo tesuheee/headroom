@@ -528,14 +528,17 @@ namespace Headroom
         {
             if (span.TotalSeconds <= 0) return english ? "0m" : "0分";
             int totalMinutes = Math.Max(0, (int)Math.Ceiling(span.TotalMinutes));
-            int hours = totalMinutes / 60;
+            int days = totalMinutes / (60 * 24);
+            int hours = (totalMinutes % (60 * 24)) / 60;
             int minutes = totalMinutes % 60;
             if (english)
             {
+                if (days > 0) return days + "d " + hours + "h " + minutes + "m";
                 if (hours > 0) return hours + "h " + minutes + "m";
                 return minutes + "m";
             }
-            if (hours > 0) return hours + "時間" + minutes + "分";
+            if (days > 0) return days + "日 " + hours + "時間 " + minutes + "分";
+            if (hours > 0) return hours + "時間 " + minutes + "分";
             return minutes + "分";
         }
 
