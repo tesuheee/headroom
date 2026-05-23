@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -21,8 +20,6 @@ namespace Headroom
 
         const int WmNcLButtonDown = 0xA1;
         const int HtCaption = 0x2;
-        const int PkceLoginTimeoutMs = 5 * 60 * 1000;
-        const int DefaultRateLimitBackoffMinutes = 30;
         const float LabelFontSize   = 10.8f;
         const float PercentFontSize = 16.5f;
         const float ResetFontSize   =  9.9f;
@@ -57,9 +54,6 @@ namespace Headroom
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         }
 
-        bool resizing;
-        Point resizeStartPoint;
-        Size resizeStartSize;
         string hoverKey = "";
         bool sideRailVisible;
         double sideRailOpacity;
@@ -100,7 +94,6 @@ namespace Headroom
             MouseMove += OnMouseMove;
             MouseUp += (s, e) =>
             {
-                resizing = false;
                 if (pendingSilentKey.Length > 0)
                 {
                     if (!silentDragging)
@@ -165,9 +158,8 @@ namespace Headroom
 
         async Task RunScheduledRefreshAsync()
         {
-            bool anyVeryNear  = (settings.ShowClaude && IsVeryNearReset(claude.Data))    || (settings.ShowCodex && IsVeryNearReset(codex.Data));
-            bool anyNearReset = (settings.ShowClaude && IsNearOrRecentReset(claude.Data)) || (settings.ShowCodex && IsNearOrRecentReset(codex.Data));
-            schedulerTimer.Interval = anyVeryNear ? 5000 : (anyNearReset ? 5000 : 10000);
+            DateTime now = DateTime.Now;
+            schedulerTimer.Interval = RefreshPolicy.SchedulerIntervalMs(settings, claude, codex, now);
 
             if (settings.ShowCodex)  await MaybeRefreshAsync(codex);
             if (settings.ShowClaude) await MaybeRefreshAsync(claude);
@@ -175,73 +167,19 @@ namespace Headroom
 
         async Task MaybeRefreshAsync(ServiceState service)
         {
-            if (service.ManuallyLoggedOut) return;
-            if (service.IsRefreshing) return;
-            if (service.RateLimitedUntil.HasValue)
+            var decision = RefreshPolicy.Evaluate(service, settings, DateTime.Now);
+            if (decision.RateLimited)
             {
-                if (service.RateLimitedUntil.Value > DateTime.Now)
-                {
-                    service.Status = "rate_limited";
-                    return;
-                }
-                service.RateLimitedUntil = null;
+                service.Status = "rate_limited";
+                return;
             }
-            if (service.BoostUntil.HasValue && service.BoostUntil.Value <= DateTime.Now)
+            if (decision.RateLimitExpired)
+                service.RateLimitedUntil = null;
+            if (decision.BoostExpired)
                 service.BoostUntil = null;
 
-            TimeSpan due;
-            if (IsVeryNearReset(service.Data))
-                due = TimeSpan.FromSeconds(5);
-            else if (IsNearOrRecentReset(service.Data))
-                due = TimeSpan.FromSeconds(Math.Max(15, settings.NearResetIntervalSeconds));
-            else
-                due = TimeSpan.FromMinutes(Math.Max(1, RefreshIntervalMinutes(service)));
-
-            if (service.LastRefresh == DateTime.MinValue || DateTime.Now - service.LastRefresh >= due)
+            if (decision.ShouldRefresh)
                 await RefreshServiceAsync(service, false);
-        }
-
-        static bool IsNearOrRecentReset(UsageData data)
-        {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
-
-            TimeSpan rem;
-            if (fiveEmpty)
-            {
-                if (string.IsNullOrEmpty(data.FiveHourReset)) return true;
-                if (TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            if (weekEmpty)
-            {
-                if (string.IsNullOrEmpty(data.WeeklyReset)) return true;
-                if (TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            return false;
-        }
-
-        static bool IsVeryNearReset(UsageData data)
-        {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
-            TimeSpan rem;
-            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset)
-                && TryGetResetRemaining(data.FiveHourReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset)
-                && TryGetResetRemaining(data.WeeklyReset, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            return false;
-        }
-
-        int RefreshIntervalMinutes(ServiceState service)
-        {
-            if (service.BoostUntil.HasValue) return settings.BoostIntervalMinutes;
-            return settings.NormalIntervalMinutes;
         }
 
         static void UpdateBarAnimation(ServiceState svc, bool showUsed)
@@ -277,8 +215,8 @@ namespace Headroom
         async Task RefreshAllAsync(bool manual)
         {
             var tasks = new List<Task>();
-            if (settings.ShowCodex)  tasks.Add(RefreshCodexViaApiAsync(codex, manual));
-            if (settings.ShowClaude) tasks.Add(RefreshClaudeViaApiAsync(claude, manual));
+            if (settings.ShowCodex)  tasks.Add(RefreshServiceAsync(codex, manual));
+            if (settings.ShowClaude) tasks.Add(RefreshServiceAsync(claude, manual));
             await Task.WhenAll(tasks);
         }
 
@@ -334,38 +272,23 @@ namespace Headroom
             service.LastRefresh = DateTime.Now;
         }
 
-        static void ApplyRateLimit(ServiceState service, HttpResponseMessage resp, string debugName, int code)
+        void ApplyFetchResult(ServiceState service, UsageFetchResult result)
         {
-            DateTime until = RateLimitUntil(resp);
-            service.RateLimitedUntil = until;
-            service.Status = "rate_limited";
-            service.LastRefresh = DateTime.Now;
-
-            string retryAfter = resp.Headers.RetryAfter == null ? "" : resp.Headers.RetryAfter.ToString();
-            WriteDebug(debugName,
-                "HTTP " + code + "\r\n" +
-                "Retry-After: " + retryAfter + "\r\n" +
-                "Backoff until: " + until.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
-        }
-
-        static DateTime RateLimitUntil(HttpResponseMessage resp)
-        {
-            var retryAfter = resp.Headers.RetryAfter;
-            if (retryAfter != null)
+            if (!string.IsNullOrEmpty(result.DebugName))
+                WriteDebug(result.DebugName, result.DebugText);
+            if (result.Data != null)
+                service.Data = result.Data;
+            service.Status = result.Status ?? (service.Data == null ? "fetch_error" : service.Data.Status);
+            if (result.RateLimitedUntil.HasValue)
             {
-                if (retryAfter.Delta.HasValue)
-                {
-                    double seconds = Math.Max(60, Math.Min(7200, retryAfter.Delta.Value.TotalSeconds));
-                    return DateTime.Now.AddSeconds(seconds);
-                }
-                if (retryAfter.Date.HasValue)
-                {
-                    DateTime target = retryAfter.Date.Value.LocalDateTime;
-                    if (target > DateTime.Now)
-                        return target;
-                }
+                service.RateLimitedUntil = result.RateLimitedUntil;
+                service.Status = "rate_limited";
             }
-            return DateTime.Now.AddMinutes(DefaultRateLimitBackoffMinutes);
+            else if (service.Status != "fetch_error")
+            {
+                service.RateLimitedUntil = null;
+            }
+            service.LastRefresh = DateTime.Now;
         }
 
         static string TryReadFileWithRetry(string path)
@@ -414,134 +337,6 @@ namespace Headroom
             lock (cliCacheLock) { cliAvailabilityCache.Remove(exeName); }
         }
 
-        static string GeneratePkceVerifier()
-        {
-            var bytes = new byte[32];
-            using (var rng = new System.Security.Cryptography.RNGCryptoServiceProvider())
-                rng.GetBytes(bytes);
-            return Base64UrlEncode(bytes);
-        }
-
-        static string GeneratePkceChallenge(string verifier)
-        {
-            using (var sha = new System.Security.Cryptography.SHA256Managed())
-            {
-                byte[] hash = sha.ComputeHash(System.Text.Encoding.ASCII.GetBytes(verifier));
-                return Base64UrlEncode(hash);
-            }
-        }
-
-        static string Base64UrlEncode(byte[] data)
-        {
-            return Convert.ToBase64String(data).Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        }
-
-        static int GetFreeLocalPort()
-        {
-            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-            listener.Start();
-            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
-        }
-
-        static bool TryStartOAuthListener(int port, out HttpListener listener, out Exception error)
-        {
-            listener = new HttpListener();
-            error = null;
-            listener.Prefixes.Add("http://localhost:" + port + "/");
-            try
-            {
-                listener.Start();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = ex;
-                try { listener.Close(); } catch { }
-                listener = null;
-                return false;
-            }
-        }
-
-        static async Task<string> WaitForOAuthCallbackAsync(HttpListener listener, string expectedState, int timeoutMs)
-        {
-            Task<HttpListenerContext> getCtx = listener.GetContextAsync();
-            Task delay = Task.Delay(timeoutMs);
-            var completed = await Task.WhenAny(getCtx, delay);
-            if (completed == delay)
-            {
-                try { listener.Stop(); } catch { }
-                throw new TimeoutException("OAuth callback timed out");
-            }
-            HttpListenerContext ctx = await getCtx;
-            string code = null;
-            string error = null;
-            try
-            {
-                string query = ctx.Request.Url.Query ?? "";
-                var cm = Regex.Match(query, "[?&]code=([^&]+)");
-                var sm = Regex.Match(query, "[?&]state=([^&]+)");
-                var em = Regex.Match(query, "[?&]error=([^&]+)");
-                if (em.Success) error = Uri.UnescapeDataString(em.Groups[1].Value);
-                if (!sm.Success) error = error ?? "state_missing";
-                else if (Uri.UnescapeDataString(sm.Groups[1].Value) != expectedState) error = error ?? "state_mismatch";
-                if (cm.Success && error == null) code = Uri.UnescapeDataString(cm.Groups[1].Value);
-
-                string body = error == null
-                    ? "<!doctype html><html lang='ja'><head><meta charset='utf-8'><title>Headroom</title></head><body style='font-family:Segoe UI,sans-serif;text-align:center;padding-top:80px;color:#222;'><h2>Headroom ログイン完了</h2><p>このタブを閉じてください。</p></body></html>"
-                    : "<!doctype html><html lang='ja'><head><meta charset='utf-8'><title>Headroom</title></head><body style='font-family:Segoe UI,sans-serif;text-align:center;padding-top:80px;color:#b00;'><h2>Headroom ログイン失敗</h2><p>" + System.Net.WebUtility.HtmlEncode(error) + "</p></body></html>";
-                byte[] buf = System.Text.Encoding.UTF8.GetBytes(body);
-                ctx.Response.ContentType = "text/html; charset=utf-8";
-                ctx.Response.ContentLength64 = buf.Length;
-                await ctx.Response.OutputStream.WriteAsync(buf, 0, buf.Length);
-            }
-            finally
-            {
-                try { ctx.Response.Close(); } catch { }
-            }
-            if (code == null) throw new InvalidOperationException("OAuth error: " + (error ?? "no_code"));
-            return code;
-        }
-
-        static string JsonEscape(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return s;
-            var sb = new System.Text.StringBuilder(s.Length + 8);
-            foreach (char c in s)
-            {
-                switch (c)
-                {
-                    case '"':  sb.Append("\\\""); break;
-                    case '\\': sb.Append("\\\\"); break;
-                    case '\b': sb.Append("\\b"); break;
-                    case '\f': sb.Append("\\f"); break;
-                    case '\n': sb.Append("\\n"); break;
-                    case '\r': sb.Append("\\r"); break;
-                    case '\t': sb.Append("\\t"); break;
-                    default:
-                        if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
-                        else sb.Append(c);
-                        break;
-                }
-            }
-            return sb.ToString();
-        }
-
-        static string ExtractJsonString(string json, string key)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]+)\"");
-            return m.Success ? m.Groups[1].Value : null;
-        }
-
-        static long ExtractJsonLong(string json, string key)
-        {
-            var m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*(-?\\d+)");
-            long v;
-            if (m.Success && long.TryParse(m.Groups[1].Value, out v)) return v;
-            return 0;
-        }
-
         async Task OpenLoginAsync(ServiceState service)
         {
             service.ManuallyLoggedOut = false;
@@ -574,16 +369,9 @@ namespace Headroom
                         "[Headroom] Type /login below to sign in. You can close this window once login completes.")
                     : T("[Headroom] ブラウザで認証してください。完了したらこのウィンドウは閉じてOKです。",
                         "[Headroom] A browser will open for sign-in. You can close this window once login completes.");
-                string cliExec = service.Name == "Claude" ? "claude" : "codex login";
-                string cliCommand = "chcp 65001 >nul && title " + title + " && echo. && echo " + banner + " && echo. && " + cliExec;
                 try
                 {
-                    var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/k " + cliCommand)
-                    {
-                        UseShellExecute = true,
-                        WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
-                    };
-                    System.Diagnostics.Process.Start(psi);
+                    CliLoginLauncher.Start(service.Name, title, banner);
                     service.Status = "login_pending";
                     Invalidate();
                 }
@@ -618,6 +406,7 @@ namespace Headroom
             {
                 SetupCredentialWatchers();
                 service.ManuallyLoggedOut = false;
+                service.RateLimitedUntil = null;
                 await RefreshServiceAsync(service, true);
             }
             else if (service.Status == "login_pending")
@@ -730,9 +519,10 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     claude.ManuallyLoggedOut = false;
+                    claude.RateLimitedUntil = null;
                     settings.ClaudeLoggedOut = false;
                     settings.Save();
-                    await RefreshClaudeViaApiAsync(claude, true);
+                    await RefreshServiceAsync(claude, true);
                 }));
             }
             catch { }
@@ -747,9 +537,10 @@ namespace Headroom
                 BeginInvoke(new Action(async () =>
                 {
                     codex.ManuallyLoggedOut = false;
+                    codex.RateLimitedUntil = null;
                     settings.CodexLoggedOut = false;
                     settings.Save();
-                    await RefreshCodexViaApiAsync(codex, true);
+                    await RefreshServiceAsync(codex, true);
                 }));
             }
             catch { }
@@ -773,14 +564,12 @@ namespace Headroom
 
         internal static void WriteDebug(string name, string text)
         {
-            string dir = DebugDirectory;
-            Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, name), text ?? "");
+            DebugLog.Write(name, text);
         }
 
         internal static string DebugDirectory
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".headroom"); }
+            get { return DebugLog.DirectoryPath; }
         }
 
         protected override void OnHandleCreated(EventArgs e)
