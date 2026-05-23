@@ -13,6 +13,64 @@ For non-source changes (docs, config), skip the build but still commit.
 
 ---
 
+## Task Start Protocol
+
+Before writing any code, do the following:
+
+1. **List the files you expect to touch** based on the task description.
+2. **Select the mode** using the rules below:
+   - Any file matches the standard-mode list -> standard mode
+   - Two agents will work at the same time -> separation mode
+   - Otherwise -> lightweight mode
+3. **Announce your decision** before doing anything else.
+   - Example: `Mode: standard - touches src/SettingsForm.cs`
+4. **Set up for the mode**:
+   - Lightweight: proceed directly
+   - Standard: create `docs/ai/tasks/<task-name>.md` with `Owner`, `Scope`, `Out of scope` filled in
+   - Separation: create or switch to the correct worktree when possible; if the environment prevents that, output the exact worktree commands and wait for the user to run them
+
+Do not begin implementation until the setup for your chosen mode is complete.
+
+If the user does not specify a mode, classify the task automatically. Do not ask the user to choose a mode unless the classification is ambiguous and choosing the wrong mode would create meaningful risk.
+
+### Task Request Resolution
+
+When the user says a task should be processed, handled, reviewed, or continued without naming a specific file:
+
+1. Look for task files under `docs/ai/tasks/`.
+2. If exactly one task is actionable, use it.
+3. If multiple tasks are actionable, list the candidates and ask the user which one to use.
+4. If no task file exists but the request includes enough detail to proceed, create a new task file and continue in the appropriate mode.
+5. If the request does not include enough detail to identify the task safely, ask one concise clarification question.
+
+Actionable task files are those not marked as `Done`, `Closed`, or `Cancelled`.
+
+### Task File Minimum Fields
+
+Use this shape when creating a task file:
+
+```markdown
+# Task Title
+
+Owner:
+Mode: Auto
+Status: Ready
+
+## Goal
+
+## Scope
+
+## Out of scope
+
+## Test plan
+
+## Handoff
+```
+
+At the end of Standard or Separation mode work, include a short handoff block for the other agent. The handoff must reference the task file and PR/branch instead of repeating the full plan.
+
+---
+
 ## Operation Mode
 
 Choose the mode based on **collision risk**, not task size.
