@@ -222,8 +222,12 @@ namespace Headroom
                 int secondY = firstY + rowHeight + rowGap;
                 bool fiveLockedByWeekly = weekRemain.HasValue && weekRemain.Value <= 0;
                 Color fiveAccent = fiveLockedByWeekly ? Color.FromArgb(58, 60, 68) : state.Accent;
-                DrawRow(g, T("５時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly);
-                DrawRow(g, T("１週間", "1W"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
+                bool resetTrackingAllowed = state.Status != "rate_limited" && !state.ManuallyLoggedOut;
+                DateTime now = DateTime.Now;
+                bool fiveResetTracking = resetTrackingAllowed && RefreshPolicy.IsResetDueOrPast(state.Data.FiveHourReset, now);
+                bool weekResetTracking = resetTrackingAllowed && RefreshPolicy.IsResetDueOrPast(state.Data.WeeklyReset, now);
+                DrawRow(g, T("５時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly, fiveResetTracking);
+                DrawRow(g, T("１週間", "1W"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel", false, weekResetTracking);
             }
         }
 
@@ -322,7 +326,7 @@ namespace Headroom
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false, bool resetTracking = false)
         {
             bool empty = !pct.HasValue;
             bool atLimit = pct.HasValue && (showUsed ? pct.Value >= 100 : pct.Value <= 0);
@@ -333,6 +337,7 @@ namespace Headroom
             using (var pctBrush = new SolidBrush(numColor))
             using (var labelBrush = new SolidBrush(labelColor))
             using (var dimBrush = new SolidBrush(dimColor))
+            using (var resetTrackingBrush = new SolidBrush(Color.FromArgb(245, 196, 70)))
             {
                 int labelX = x + 12;
                 int label5hW = (int)Math.Ceiling(g.MeasureString(T("５時間", "5h"), labelFont).Width);
@@ -377,7 +382,10 @@ namespace Headroom
                         SizeF resetSz = g.MeasureString(reset, resetFont);
                         silentHits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
                     }
-                    if (atLimit && !disabled)
+                    if (resetTracking && !disabled)
+                        using (var boldReset = new Font(resetFont, FontStyle.Bold))
+                            g.DrawString(reset, boldReset, resetTrackingBrush, barX, resetY);
+                    else if (atLimit && !disabled)
                         using (var boldReset = new Font(resetFont, FontStyle.Bold))
                             g.DrawString(reset, boldReset, white, barX, resetY);
                     else

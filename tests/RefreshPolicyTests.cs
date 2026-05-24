@@ -47,13 +47,21 @@ namespace Headroom
             var svc = Service("Claude", 100, 40);
 
             svc.Data.FiveHourReset = "2026/5/22 10:08";
-            Equal(TimeSpan.FromSeconds(15), RefreshPolicy.DueInterval(svc, settings, now), "near reset due");
-            True(RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "near reset");
-            True(!RefreshPolicy.IsVeryNearReset(svc.Data, now), "not very near reset");
+            Equal(TimeSpan.FromMinutes(15), RefreshPolicy.DueInterval(svc, settings, now), "pre reset normal due");
+            True(!RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "pre reset does not poll");
 
             svc.Data.FiveHourReset = "2026/5/22 10:00";
-            Equal(TimeSpan.FromSeconds(5), RefreshPolicy.DueInterval(svc, settings, now), "very near reset due");
-            True(RefreshPolicy.IsVeryNearReset(svc.Data, now), "very near reset");
+            Equal(TimeSpan.FromSeconds(10), RefreshPolicy.DueInterval(svc, settings, now), "due reset poll");
+            True(RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "due reset polls");
+
+            svc = Service("Claude", 25, 40);
+            svc.Data.WeeklyReset = "2026/5/22 10:08";
+            Equal(TimeSpan.FromMinutes(15), RefreshPolicy.DueInterval(svc, settings, now), "weekly pre reset normal due without exhaustion");
+            True(!RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "weekly pre reset does not poll without exhaustion");
+
+            svc.Data.WeeklyReset = "2026/5/22 10:00";
+            Equal(TimeSpan.FromSeconds(10), RefreshPolicy.DueInterval(svc, settings, now), "weekly due reset poll without exhaustion");
+            True(RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "weekly due reset polls without exhaustion");
         }
 
         static void TestRateLimitDecisions()

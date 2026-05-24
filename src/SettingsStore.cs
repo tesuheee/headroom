@@ -39,7 +39,6 @@ namespace Headroom
                 settings.NormalIntervalMinutes = ReadInt(root, "normalIntervalMinutes", settings.NormalIntervalMinutes);
                 settings.BoostDurationMinutes = ReadInt(root, "boostDurationMinutes", settings.BoostDurationMinutes);
                 settings.BoostIntervalMinutes = ReadInt(root, "boostIntervalMinutes", settings.BoostIntervalMinutes);
-                settings.NearResetIntervalSeconds = ReadInt(root, "nearResetIntervalSeconds", settings.NearResetIntervalSeconds);
                 settings.AlwaysOnTop = ReadBool(root, "alwaysOnTop", settings.AlwaysOnTop);
                 settings.ShowCodex = ReadBool(root, "showCodex", settings.ShowCodex);
                 settings.ShowClaude = ReadBool(root, "showClaude", settings.ShowClaude);
@@ -75,7 +74,6 @@ namespace Headroom
                     { "normalIntervalMinutes", settings.NormalIntervalMinutes },
                     { "boostDurationMinutes", settings.BoostDurationMinutes },
                     { "boostIntervalMinutes", settings.BoostIntervalMinutes },
-                    { "nearResetIntervalSeconds", settings.NearResetIntervalSeconds },
                     { "alwaysOnTop", settings.AlwaysOnTop },
                     { "showCodex", settings.ShowCodex },
                     { "showClaude", settings.ShowClaude },
