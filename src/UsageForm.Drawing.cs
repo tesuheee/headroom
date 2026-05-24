@@ -192,12 +192,15 @@ namespace Headroom
             using (var dim = new SolidBrush(Color.FromArgb(185, 190, 205)))
             {
                 g.DrawString(state.Name, title, white, x + 30, y + 10);
+                int badgeX = x + 100;
                 if (stale)
-                    DrawBadge(g, T("古い", "Stale"), x + 100, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50));
+                    badgeX += DrawBadge(g, T("古い", "Stale"), badgeX, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50)) + 6;
                 if (exhausted)
-                    DrawBadge(g, T("上限", "Limit"), x + 100, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100));
+                    badgeX += DrawBadge(g, T("上限", "Limit"), badgeX, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100)) + 6;
+                if (state.Status == "fetch_error")
+                    badgeX += DrawBadge(g, T("エラー", "Error"), badgeX, y + 14, Color.FromArgb(90, 62, 28), Color.FromArgb(235, 170, 70)) + 6;
                 if (state.Status == "rate_limited")
-                    DrawBadge(g, T("待機", "Wait"), x + 100, y + 14, Color.FromArgb(80, 64, 28), Color.FromArgb(220, 185, 80));
+                    DrawBadge(g, T("待機", "Wait"), badgeX, y + 14, Color.FromArgb(80, 64, 28), Color.FromArgb(220, 185, 80));
                 DrawCardControls(g, state, x, y, w, keyPrefix);
 
                 if (!state.Data.HasAnyValue())
@@ -590,11 +593,12 @@ namespace Headroom
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
-        void DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
+        int DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
         {
+            int badgeW = 32;
             using (var f = new Font("Segoe UI", 8.2f, FontStyle.Bold))
             {
-                int badgeW = Math.Max(32, (int)Math.Ceiling(g.MeasureString(text, f).Width) + 16);
+                badgeW = Math.Max(32, (int)Math.Ceiling(g.MeasureString(text, f).Width) + 16);
                 using (var path = RoundRect(x, y, badgeW, 20, 10))
                 {
                     using (var bg = new SolidBrush(bgColor))
@@ -611,6 +615,7 @@ namespace Headroom
                     g.DrawString(text, f, b, new RectangleF(x, y, badgeW, 20), sf);
                 }
             }
+            return badgeW;
         }
 
         void DrawServiceMark(Graphics g, string name, int x, int y, Color accent)
