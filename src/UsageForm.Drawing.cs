@@ -222,8 +222,8 @@ namespace Headroom
                 int secondY = firstY + rowHeight + rowGap;
                 bool fiveLockedByWeekly = weekRemain.HasValue && weekRemain.Value <= 0;
                 Color fiveAccent = fiveLockedByWeekly ? Color.FromArgb(58, 60, 68) : state.Accent;
-                DrawRow(g, T("5時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly);
-                DrawRow(g, T("週", "Week"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
+                DrawRow(g, T("５時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly);
+                DrawRow(g, T("１週間", "1W"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
             }
         }
 
@@ -335,17 +335,18 @@ namespace Headroom
             using (var dimBrush = new SolidBrush(dimColor))
             {
                 int labelX = x + 12;
-                int label5hW = (int)Math.Ceiling(g.MeasureString(T("5時間", "5h"), labelFont).Width);
-                int labelWkW = (int)Math.Ceiling(g.MeasureString(T("週", "Week"), labelFont).Width);
+                int label5hW = (int)Math.Ceiling(g.MeasureString(T("５時間", "5h"), labelFont).Width);
+                int labelWkW = (int)Math.Ceiling(g.MeasureString(T("１週間", "1W"), labelFont).Width);
                 int maxLabelW = Math.Max(label5hW, labelWkW);
                 string modeText = showUsed ? T("使用", "Used") : T("残り", "Rem");
                 int modeColW = Math.Max(
                     (int)Math.Ceiling(g.MeasureString(T("使用", "Used"), labelFont).Width),
                     (int)Math.Ceiling(g.MeasureString(T("残り", "Rem"), labelFont).Width));
-                int modeX = labelX + maxLabelW + 2;
+                int modeX = labelX + maxLabelW + 1;
                 int percentX = modeX + modeColW + 2;
                 int labelY = y + Math.Max(0, (int)Math.Round((numFont.Size - labelFont.Size) / 2.0));
-                g.DrawString(label, labelFont, labelBrush, labelX, labelY);
+                int actualLabelW = (int)Math.Ceiling(g.MeasureString(label, labelFont).Width);
+                g.DrawString(label, labelFont, labelBrush, labelX + maxLabelW - actualLabelW, labelY);
                 if (hitMode != null)
                     silentHits[hitMode] = new Rectangle(modeX - 2, labelY - 2, modeColW + 4, labelFont.Height + 4);
                 g.DrawString(modeText, labelFont, dimBrush, modeX, labelY);
