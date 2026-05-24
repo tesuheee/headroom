@@ -463,6 +463,8 @@ namespace Headroom
                     btn.HoverBackColor   = Color.FromArgb(62, 148, 250);
                     btn.ForeColor        = Color.White;
                     btn.Invalidate();
+                    if (isClaude) original.ClaudeLoggedOut = true;
+                    else original.CodexLoggedOut = true;
                     await logout();
                 }
             };
