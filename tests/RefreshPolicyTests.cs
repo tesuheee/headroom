@@ -76,7 +76,7 @@ namespace Headroom
             True(!limited.ShouldRefresh, "rate limited no refresh");
 
             svc.RateLimitedUntil = now.AddSeconds(-1);
-            svc.LastRefresh = DateTime.MinValue;
+            svc.LastRefresh = now.AddMinutes(-1);
             var expired = RefreshPolicy.Evaluate(svc, settings, now);
             True(expired.RateLimitExpired, "rate limit expired");
             True(expired.ShouldRefresh, "rate limit expired refresh");

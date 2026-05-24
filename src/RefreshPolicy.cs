@@ -41,7 +41,9 @@ namespace Headroom
                 decision.BoostExpired = true;
 
             decision.Due = DueInterval(service, settings, now);
-            decision.ShouldRefresh = service.LastRefresh == DateTime.MinValue || now - service.LastRefresh >= decision.Due;
+            decision.ShouldRefresh = decision.RateLimitExpired ||
+                service.LastRefresh == DateTime.MinValue ||
+                now - service.LastRefresh >= decision.Due;
             return decision;
         }
 
