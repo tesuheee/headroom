@@ -121,6 +121,15 @@ namespace Headroom
 
         static bool TryGetResetRemaining(string raw, DateTime now, bool rollTimeOnlyToTomorrow, out TimeSpan remaining)
         {
+            string cleaned = Regex.Replace(raw ?? "", @"^\s*リセット\s*[：:]\s*", "").Trim();
+            var relative = Regex.Match(cleaned, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
+            if (relative.Success)
+            {
+                int hours = relative.Groups[1].Success ? int.Parse(relative.Groups[1].Value) : 0;
+                int minutes = relative.Groups[2].Success ? int.Parse(relative.Groups[2].Value) : 0;
+                remaining = new TimeSpan(hours, minutes, 0);
+                return true;
+            }
             DateTime target;
             if (TryParseResetTarget(raw, now, rollTimeOnlyToTomorrow, out target))
             {
