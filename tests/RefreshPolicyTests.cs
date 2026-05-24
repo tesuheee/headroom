@@ -54,6 +54,11 @@ namespace Headroom
             svc.Data.FiveHourReset = "2026/5/22 10:00";
             Equal(TimeSpan.FromSeconds(5), RefreshPolicy.DueInterval(svc, settings, now), "very near reset due");
             True(RefreshPolicy.IsVeryNearReset(svc.Data, now), "very near reset");
+
+            svc = Service("Claude", 25, 100);
+            svc.Data.WeeklyReset = "10:00（金）";
+            Equal(TimeSpan.FromSeconds(5), RefreshPolicy.DueInterval(svc, settings, now), "weekday reset due");
+            True(RefreshPolicy.IsVeryNearReset(svc.Data, now), "weekday reset parsed");
         }
 
         static void TestRateLimitDecisions()
