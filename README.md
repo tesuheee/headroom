@@ -17,6 +17,26 @@ Headroom is a compact Windows desktop AI usage monitor for Claude Code and Codex
 - **Account controls** — log in or log out of Claude Code / Codex from the Settings dialog
 - **OAuth-aware status** — reads CLI-compatible credentials, refreshes tokens, and backs off when the usage API returns rate limits
 
+## Requirements
+
+Runtime:
+
+- 64-bit Windows 10 or Windows 11.
+- .NET Framework 4.8 or later. Windows 10 22H2 and Windows 11 include a compatible .NET Framework 4.x runtime.
+- The release zip does not require the .NET Framework Developer Pack.
+
+Source builds:
+
+- Windows PowerShell or PowerShell 7.
+- .NET Framework 4.8 Developer Pack, or Visual Studio Build Tools with the .NET Framework 4.8 targeting pack.
+- `build.ps1` intentionally uses `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe`; that is the shared CLR 4 toolchain path for .NET Framework 4.x, not a .NET Framework 4.0 target.
+
+Install the build prerequisites with winget:
+
+```powershell
+winget install --id Microsoft.DotNet.Framework.DeveloperPack_4 --version 4.8 --source winget
+```
+
 ## Getting Started
 
 1. Download the latest versioned `Headroom-vX.Y.Z.zip` from [Releases](https://github.com/tesuheee/headroom-ai-usage-monitor/releases) and unzip anywhere.
@@ -109,16 +129,27 @@ For UI verification without spending quota, start Headroom with a fixture folder
 The folder must contain `claude.json` and `codex.json` in the same shape as the live API
 responses. Headroom watches those files and refreshes automatically when they change.
 
-## Build from source
+## Build and Test from Source
 
 ```powershell
 .\build.ps1
 ```
 
-Release binaries target .NET Framework 4.8 for Windows 10/11 compatibility.
-Windows 10 22H2 and Windows 11 include .NET Framework 4.8 or later. Building
-from source requires the .NET Framework 4.8 Developer Pack or Visual Studio
-Build Tools with the .NET Framework 4.8 targeting pack.
+Run the parser/settings tests:
+
+```powershell
+.\tests\run-tests.ps1
+```
+
+Build the fixture binary for UI verification:
+
+```powershell
+.\build.ps1 -DebugFixture
+```
+
+If `build.ps1` reports that .NET Framework 4.8 reference assemblies are missing,
+install the .NET Framework 4.8 Developer Pack. This is only required for building
+from source; it is not required to run the released `Headroom.exe`.
 
 To create a release archive:
 
