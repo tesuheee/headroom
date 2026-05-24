@@ -655,6 +655,11 @@
 
       <section id="build">
         <h2>Build</h2>
+        <p>
+          配布 exe の実行対象は 64bit Windows 10 / Windows 11 + .NET Framework 4.8 以上です。
+          実行だけなら .NET Framework Developer Pack は不要です。
+          ソースからビルドするPCには .NET Framework 4.8 Developer Pack、または .NET Framework 4.8 targeting pack を含む Visual Studio Build Tools が必要です。
+        </p>
         <div class="grid-2">
           <div class="node codex">
             <strong>Production build</strong>
@@ -668,6 +673,8 @@
         <p>
           通常 exe が起動中で <code>bin\Headroom.exe</code> をロックしている場合でも、
           debug 出力なら検証用 exe を作れます。<code>debug/</code> は配布物にも Git にも含めません。
+          <code>build.ps1</code> の <code>v4.0.30319</code> は .NET Framework 4.x 共通の CLR 4 ツールチェーンの場所であり、
+          ターゲットフレームワークは <code>Headroom.csproj</code> の <code>v4.8</code> で指定します。
         </p>
       </section>
 
