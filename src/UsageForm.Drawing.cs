@@ -19,7 +19,7 @@ namespace Headroom
         void PaintContent(Graphics g)
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             g.Clear(Color.Transparent);
             hits.Clear();
             silentHits.Clear();

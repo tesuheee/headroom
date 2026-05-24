@@ -103,7 +103,11 @@ namespace Headroom
             if (key.EndsWith("refresh"))
                 await RefreshServiceAsync(service, true);
             else if (key.EndsWith("boost"))
-                ToggleBoost(service);
+            {
+                bool activated = ToggleBoost(service);
+                if (activated)
+                    await RefreshServiceAsync(service, true);
+            }
             else if (key.EndsWith("login"))
                 await OpenLoginAsync(service);
         }
@@ -126,13 +130,17 @@ namespace Headroom
             return "";
         }
 
-        void ToggleBoost(ServiceState service)
+        bool ToggleBoost(ServiceState service)
         {
             if (service.BoostUntil.HasValue && service.BoostUntil.Value > DateTime.Now)
+            {
                 service.BoostUntil = null;
-            else
-                service.BoostUntil = DateTime.Now.AddMinutes(Math.Max(1, settings.BoostDurationMinutes));
+                Invalidate();
+                return false;
+            }
+            service.BoostUntil = DateTime.Now.AddMinutes(Math.Max(1, settings.BoostDurationMinutes));
             Invalidate();
+            return true;
         }
 
         string SilentHitKey(Point p)
