@@ -1,6 +1,5 @@
 using System;
 using System.Net.Http;
-using System.Text.RegularExpressions;
 
 namespace Headroom
 {
@@ -92,49 +91,7 @@ namespace Headroom
 
         static bool TryGetResetRemaining(string raw, DateTime now, bool rollTimeOnlyToTomorrow, out TimeSpan remaining)
         {
-            string cleaned = Regex.Replace(raw ?? "", @"^\s*リセット\s*[：:]\s*", "").Trim();
-            var relative = Regex.Match(cleaned, @"(?:(\d+)\s*時間)?\s*(?:(\d+)\s*分)?\s*後にリセット");
-            if (relative.Success)
-            {
-                int hours = relative.Groups[1].Success ? int.Parse(relative.Groups[1].Value) : 0;
-                int minutes = relative.Groups[2].Success ? int.Parse(relative.Groups[2].Value) : 0;
-                remaining = new TimeSpan(hours, minutes, 0);
-                return true;
-            }
-            DateTime target;
-            if (TryParseResetTarget(raw, now, rollTimeOnlyToTomorrow, out target))
-            {
-                remaining = target - now;
-                return true;
-            }
-            remaining = TimeSpan.Zero;
-            return false;
-        }
-
-        static bool TryParseResetTarget(string text, DateTime now, bool rollTimeOnlyToTomorrow, out DateTime target)
-        {
-            target = DateTime.MinValue;
-            var dateTime = Regex.Match(text, @"(?:(\d{4})/)?(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})");
-            if (dateTime.Success)
-            {
-                int year = dateTime.Groups[1].Success ? int.Parse(dateTime.Groups[1].Value) : now.Year;
-                target = new DateTime(year, int.Parse(dateTime.Groups[2].Value), int.Parse(dateTime.Groups[3].Value), int.Parse(dateTime.Groups[4].Value), int.Parse(dateTime.Groups[5].Value), 0);
-                if (!dateTime.Groups[1].Success && target < now.AddMinutes(-1)) target = target.AddYears(1);
-                return true;
-            }
-
-            var time = Regex.Match(text, @"(?:^|[^\d])(\d{1,2}):(\d{2})(?:$|[^\d])");
-            if (time.Success)
-            {
-                target = new DateTime(now.Year, now.Month, now.Day, int.Parse(time.Groups[1].Value), int.Parse(time.Groups[2].Value), 0);
-                if (target < now.AddMinutes(-1))
-                {
-                    if (!rollTimeOnlyToTomorrow) return false;
-                    target = target.AddDays(1);
-                }
-                return true;
-            }
-            return false;
+            return ResetTimes.TryGetRemaining(raw, now, rollTimeOnlyToTomorrow, out remaining);
         }
     }
 }

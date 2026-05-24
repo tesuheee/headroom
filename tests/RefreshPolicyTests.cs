@@ -62,6 +62,10 @@ namespace Headroom
             svc.Data.WeeklyReset = "2026/5/22 10:00";
             Equal(TimeSpan.FromSeconds(10), RefreshPolicy.DueInterval(svc, settings, now), "weekly due reset poll without exhaustion");
             True(RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "weekly due reset polls without exhaustion");
+
+            svc.Data.WeeklyReset = "10:00（金）";
+            Equal(TimeSpan.FromSeconds(10), RefreshPolicy.DueInterval(svc, settings, now), "weekday reset poll without exhaustion");
+            True(RefreshPolicy.IsNearOrRecentReset(svc.Data, now), "weekday reset parsed without exhaustion");
         }
 
         static void TestRateLimitDecisions()

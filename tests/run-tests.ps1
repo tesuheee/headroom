@@ -15,6 +15,7 @@ $Sources = @(
   (Join-Path $Root "src\SettingsStore.cs"),
   (Join-Path $Root "src\CredentialStores.cs"),
   (Join-Path $Root "src\UsageParsers.cs"),
+  (Join-Path $Root "src\ResetTimes.cs"),
   (Join-Path $Root "src\RefreshPolicy.cs"),
   (Join-Path $Root "tests\ParserTests.cs"),
   (Join-Path $Root "tests\CredentialStoreTests.cs"),
