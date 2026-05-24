@@ -4,7 +4,7 @@
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <OutputType>WinExe</OutputType>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <AssemblyName Condition="'$(AssemblyName)' == ''">Headroom</AssemblyName>
     <RootNamespace>Headroom</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>

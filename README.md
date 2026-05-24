@@ -115,7 +115,10 @@ responses. Headroom watches those files and refreshes automatically when they ch
 .\build.ps1
 ```
 
-Windows + .NET Framework 4 required (MSBuild.exe path is hard-coded in `build.ps1`).
+Release binaries target .NET Framework 4.8 for Windows 10/11 compatibility.
+Windows 10 22H2 and Windows 11 include .NET Framework 4.8 or later. Building
+from source requires the .NET Framework 4.8 Developer Pack or Visual Studio
+Build Tools with the .NET Framework 4.8 targeting pack.
 
 To create a release archive:
 

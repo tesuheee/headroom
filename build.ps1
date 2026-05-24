@@ -19,6 +19,15 @@ $AssemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ExeName)
 $Project = Join-Path $PSScriptRoot "Headroom.csproj"
 $VersionInfoDir = Join-Path $PSScriptRoot "obj"
 $VersionInfoFile = Join-Path $VersionInfoDir "Headroom.VersionInfo.cs"
+$TargetFramework = "v4.8"
+$ProgramFilesX86 = ${env:ProgramFiles(x86)}
+if (!$ProgramFilesX86) { $ProgramFilesX86 = $env:ProgramFiles }
+$ReferenceAssemblies = Join-Path $ProgramFilesX86 "Reference Assemblies\Microsoft\Framework\.NETFramework\$TargetFramework"
+if (!(Test-Path $ReferenceAssemblies)) {
+  throw ".NET Framework 4.8 reference assemblies not found: $ReferenceAssemblies. Install the .NET Framework 4.8 Developer Pack or Visual Studio Build Tools with the .NET Framework 4.8 targeting pack."
+}
+
+# .NET Framework 4.x uses the CLR 4 toolchain directory name even when targeting 4.8.
 $MsBuild = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe"
 if (!(Test-Path $MsBuild)) {
   throw "MSBuild not found: $MsBuild"
