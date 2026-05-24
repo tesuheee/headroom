@@ -18,13 +18,7 @@ namespace Headroom
 
         public static int SchedulerIntervalMs(WidgetSettings settings, ServiceState claude, ServiceState codex, DateTime now)
         {
-            bool anyVeryNear =
-                (settings.ShowClaude && IsVeryNearReset(claude.Data, now)) ||
-                (settings.ShowCodex && IsVeryNearReset(codex.Data, now));
-            bool anyNear =
-                (settings.ShowClaude && IsNearOrRecentReset(claude.Data, now)) ||
-                (settings.ShowCodex && IsNearOrRecentReset(codex.Data, now));
-            return anyVeryNear ? 5000 : (anyNear ? 5000 : 10000);
+            return 10000;
         }
 
         public static RefreshDecision Evaluate(ServiceState service, WidgetSettings settings, DateTime now)
@@ -46,16 +40,16 @@ namespace Headroom
                 decision.BoostExpired = true;
 
             decision.Due = DueInterval(service, settings, now);
-            decision.ShouldRefresh = service.LastRefresh == DateTime.MinValue || now - service.LastRefresh >= decision.Due;
+            decision.ShouldRefresh = decision.RateLimitExpired ||
+                service.LastRefresh == DateTime.MinValue ||
+                now - service.LastRefresh >= decision.Due;
             return decision;
         }
 
         public static TimeSpan DueInterval(ServiceState service, WidgetSettings settings, DateTime now)
         {
-            if (IsVeryNearReset(service.Data, now))
-                return TimeSpan.FromSeconds(5);
             if (IsNearOrRecentReset(service.Data, now))
-                return TimeSpan.FromSeconds(Math.Max(15, settings.NearResetIntervalSeconds));
+                return TimeSpan.FromSeconds(10);
             int minutes = service.BoostUntil.HasValue && service.BoostUntil.Value > now
                 ? settings.BoostIntervalMinutes
                 : settings.NormalIntervalMinutes;
@@ -64,39 +58,16 @@ namespace Headroom
 
         public static bool IsNearOrRecentReset(UsageData data, DateTime now)
         {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
-
-            TimeSpan rem;
-            if (fiveEmpty)
-            {
-                if (string.IsNullOrEmpty(data.FiveHourReset)) return true;
-                if (TryGetResetRemaining(data.FiveHourReset, now, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            if (weekEmpty)
-            {
-                if (string.IsNullOrEmpty(data.WeeklyReset)) return true;
-                if (TryGetResetRemaining(data.WeeklyReset, now, false, out rem) && Math.Abs(rem.TotalMinutes) < 10)
-                    return true;
-            }
-            return false;
+            return IsResetDueOrPast(data.FiveHourReset, now) ||
+                IsResetDueOrPast(data.WeeklyReset, now);
         }
 
-        public static bool IsVeryNearReset(UsageData data, DateTime now)
+        public static bool IsResetDueOrPast(string raw, DateTime now)
         {
-            bool fiveEmpty = data.FiveHourRemainingPercent().HasValue && data.FiveHourRemainingPercent().Value <= 0;
-            bool weekEmpty = data.WeeklyRemainingPercent().HasValue && data.WeeklyRemainingPercent().Value <= 0;
-            if (!fiveEmpty && !weekEmpty) return false;
             TimeSpan rem;
-            if (fiveEmpty && !string.IsNullOrEmpty(data.FiveHourReset)
-                && TryGetResetRemaining(data.FiveHourReset, now, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            if (weekEmpty && !string.IsNullOrEmpty(data.WeeklyReset)
-                && TryGetResetRemaining(data.WeeklyReset, now, false, out rem) && Math.Abs(rem.TotalMinutes) < 1)
-                return true;
-            return false;
+            return !string.IsNullOrWhiteSpace(raw) &&
+                TryGetResetRemaining(raw, now, false, out rem) &&
+                rem.TotalSeconds <= 0;
         }
 
         public static DateTime RateLimitUntil(HttpResponseMessage resp, DateTime now)

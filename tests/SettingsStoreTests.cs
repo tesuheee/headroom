@@ -42,7 +42,6 @@ namespace Headroom
                 "\"normalIntervalMinutes\":20," +
                 "\"boostDurationMinutes\":40," +
                 "\"boostIntervalMinutes\":2," +
-                "\"nearResetIntervalSeconds\":30," +
                 "\"alwaysOnTop\":true," +
                 "\"showCodex\":false," +
                 "\"showClaude\":true," +
@@ -63,7 +62,6 @@ namespace Headroom
             Equal(20, settings.NormalIntervalMinutes, "normal interval");
             Equal(40, settings.BoostDurationMinutes, "boost duration");
             Equal(2, settings.BoostIntervalMinutes, "boost interval");
-            Equal(30, settings.NearResetIntervalSeconds, "near reset interval");
             True(settings.AlwaysOnTop, "always on top");
             True(!settings.ShowCodex, "show codex");
             True(settings.ShowClaude, "show claude");

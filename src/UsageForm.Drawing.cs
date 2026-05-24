@@ -192,12 +192,15 @@ namespace Headroom
             using (var dim = new SolidBrush(Color.FromArgb(185, 190, 205)))
             {
                 g.DrawString(state.Name, title, white, x + 30, y + 10);
+                int badgeX = x + 100;
                 if (stale)
-                    DrawBadge(g, T("古い", "Stale"), x + 100, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50));
+                    badgeX += DrawBadge(g, T("古い", "Stale"), badgeX, y + 14, Color.FromArgb(110, 85, 20), Color.FromArgb(180, 150, 50)) + 6;
                 if (exhausted)
-                    DrawBadge(g, T("上限", "Limit"), x + 100, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100));
+                    badgeX += DrawBadge(g, T("上限", "Limit"), badgeX, y + 14, Color.FromArgb(100, 35, 35), Color.FromArgb(220, 100, 100)) + 6;
+                if (state.Status == "fetch_error")
+                    badgeX += DrawBadge(g, T("エラー", "Error"), badgeX, y + 14, Color.FromArgb(90, 62, 28), Color.FromArgb(235, 170, 70)) + 6;
                 if (state.Status == "rate_limited")
-                    DrawBadge(g, T("待機", "Wait"), x + 100, y + 14, Color.FromArgb(80, 64, 28), Color.FromArgb(220, 185, 80));
+                    DrawBadge(g, T("待機", "Wait"), badgeX, y + 14, Color.FromArgb(80, 64, 28), Color.FromArgb(220, 185, 80));
                 DrawCardControls(g, state, x, y, w, keyPrefix);
 
                 if (!state.Data.HasAnyValue())
@@ -222,8 +225,12 @@ namespace Headroom
                 int secondY = firstY + rowHeight + rowGap;
                 bool fiveLockedByWeekly = weekRemain.HasValue && weekRemain.Value <= 0;
                 Color fiveAccent = fiveLockedByWeekly ? Color.FromArgb(58, 60, 68) : state.Accent;
-                DrawRow(g, T("５時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly);
-                DrawRow(g, T("１週間", "1W"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel");
+                bool resetTrackingAllowed = state.Status != "rate_limited" && !state.ManuallyLoggedOut;
+                DateTime now = DateTime.Now;
+                bool fiveResetTracking = resetTrackingAllowed && RefreshPolicy.IsResetDueOrPast(state.Data.FiveHourReset, now);
+                bool weekResetTracking = resetTrackingAllowed && RefreshPolicy.IsResetDueOrPast(state.Data.WeeklyReset, now);
+                DrawRow(g, T("５時間", "5h"), state.Data.FiveHourDisplayPercent(showUsed), state.DisplayedFivePct, showUsed, false, state.Data.FiveHourReset, state.Data.FiveHourNotStarted, settings.FiveHourResetMode, x, firstY, w, fiveAccent, label, reset, num, white, muted, dim, keyPrefix + "-fiveMode", keyPrefix + "-fiveResetLabel", fiveLockedByWeekly, fiveResetTracking);
+                DrawRow(g, T("１週間", "1W"), state.Data.WeeklyDisplayPercent(showUsed), state.DisplayedWeekPct, showUsed, true, state.Data.WeeklyReset, state.Data.WeeklyNotStarted, settings.WeeklyResetMode, x, secondY, w, state.Accent, label, reset, num, white, muted, dim, keyPrefix + "-weekMode", keyPrefix + "-weekResetLabel", false, weekResetTracking);
             }
         }
 
@@ -305,7 +312,7 @@ namespace Headroom
             return English ? min + "m left" : "残り" + min + "分";
         }
 
-        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false)
+        void DrawRow(Graphics g, string label, int? pct, double? barPct, bool showUsed, bool weekly, string resetText, bool notStarted, string resetMode, int x, int y, int w, Color accent, Font labelFont, Font resetFont, Font numFont, Brush white, Brush muted, Brush dim, string hitMode = null, string hitReset = null, bool disabled = false, bool resetTracking = false)
         {
             bool empty = !pct.HasValue;
             bool atLimit = pct.HasValue && (showUsed ? pct.Value >= 100 : pct.Value <= 0);
@@ -316,6 +323,7 @@ namespace Headroom
             using (var pctBrush = new SolidBrush(numColor))
             using (var labelBrush = new SolidBrush(labelColor))
             using (var dimBrush = new SolidBrush(dimColor))
+            using (var resetTrackingBrush = new SolidBrush(Color.FromArgb(245, 196, 70)))
             {
                 int labelX = x + 12;
                 int label5hW = (int)Math.Ceiling(g.MeasureString(T("５時間", "5h"), labelFont).Width);
@@ -360,7 +368,10 @@ namespace Headroom
                         SizeF resetSz = g.MeasureString(reset, resetFont);
                         silentHits[hitReset] = new Rectangle(barX - 2, resetY - 2, (int)Math.Ceiling(resetSz.Width) + 4, (int)Math.Ceiling(resetSz.Height) + 4);
                     }
-                    if (atLimit && !disabled)
+                    if (resetTracking && !disabled)
+                        using (var boldReset = new Font(resetFont, FontStyle.Bold))
+                            g.DrawString(reset, boldReset, resetTrackingBrush, barX, resetY);
+                    else if (atLimit && !disabled)
                         using (var boldReset = new Font(resetFont, FontStyle.Bold))
                             g.DrawString(reset, boldReset, white, barX, resetY);
                     else
@@ -520,11 +531,12 @@ namespace Headroom
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
-        void DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
+        int DrawBadge(Graphics g, string text, int x, int y, Color bgColor, Color textColor)
         {
+            int badgeW = 32;
             using (var f = new Font("Segoe UI", 8.2f, FontStyle.Bold))
             {
-                int badgeW = Math.Max(32, (int)Math.Ceiling(g.MeasureString(text, f).Width) + 16);
+                badgeW = Math.Max(32, (int)Math.Ceiling(g.MeasureString(text, f).Width) + 16);
                 using (var path = RoundRect(x, y, badgeW, 20, 10))
                 {
                     using (var bg = new SolidBrush(bgColor))
@@ -541,6 +553,7 @@ namespace Headroom
                     g.DrawString(text, f, b, new RectangleF(x, y, badgeW, 20), sf);
                 }
             }
+            return badgeW;
         }
 
         void DrawServiceMark(Graphics g, string name, int x, int y, Color accent)

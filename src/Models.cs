@@ -108,7 +108,6 @@ namespace Headroom
         public int NormalIntervalMinutes = 15;
         public int BoostDurationMinutes = 30;
         public int BoostIntervalMinutes = 1;
-        public int NearResetIntervalSeconds = 15;
         public bool AlwaysOnTop = false;
         public bool ShowCodex = true;
         public bool ShowClaude = true;
@@ -171,7 +170,6 @@ namespace Headroom
             NormalIntervalMinutes = other.NormalIntervalMinutes;
             BoostDurationMinutes = other.BoostDurationMinutes;
             BoostIntervalMinutes = other.BoostIntervalMinutes;
-            NearResetIntervalSeconds = other.NearResetIntervalSeconds;
             AlwaysOnTop = other.AlwaysOnTop;
             ShowCodex = other.ShowCodex;
             ShowClaude = other.ShowClaude;
