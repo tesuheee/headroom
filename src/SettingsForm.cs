@@ -196,9 +196,9 @@ namespace Headroom
 
             int rightY = 12;
             AddSection(rightCard, "更新", "Refresh", ref rightY);
-            AddRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, ref rightY);
-            AddRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, ref rightY);
-            AddRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, ref rightY);
+            AddNumberRow(rightCard, "通常更新間隔 (分)", "Normal interval (min)", "", "", normal, settings.NormalIntervalMinutes, ref rightY, 1, 240);
+            AddNumberRow(rightCard, "ブースト時間 (分)", "Boost duration (min)", "", "", boostDuration, settings.BoostDurationMinutes, ref rightY, 1, 240);
+            AddNumberRow(rightCard, "ブースト更新間隔 (分)", "Boost interval (min)", "", "", boostInterval, settings.BoostIntervalMinutes, ref rightY, 1, 240);
             AddSection(rightCard, "閾値", "Thresholds", ref rightY);
             AddNumberWithColor(rightCard, "黄色になる残量 (%)", "Yellow threshold (%)", "", "", warningPercent, settings.WarningRemainingPercent, ref rightY, 1, 99);
             AddNumberWithColor(rightCard, "赤になる残量 (%)", "Red threshold (%)", "", "", criticalPercent, settings.CriticalRemainingPercent, ref rightY, 1, 99);
@@ -518,10 +518,15 @@ namespace Headroom
             };
         }
 
-        void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, ref int y, int min, int max)
+        void AddNumberRow(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, ref int y, int min, int max)
         {
             StyleNumber(box, value, min, max);
-            AddRow(parent, titleJa, titleEn, descJa, descEn, box, ref y);
+            AddRow(parent, titleJa, titleEn, descJa, descEn, NumberStepper(box, min, max), ref y);
+        }
+
+        void AddNumberWithColor(Panel parent, string titleJa, string titleEn, string descJa, string descEn, TextBox box, int value, ref int y, int min, int max)
+        {
+            AddNumberRow(parent, titleJa, titleEn, descJa, descEn, box, value, ref y, min, max);
         }
 
         void SetupCombo(DarkComboBox box, string value, string[] items)
@@ -557,13 +562,63 @@ namespace Headroom
         void StyleNumber(TextBox box, int value, int min, int max)
         {
             box.Text = Math.Max(min, Math.Min(max, value)).ToString();
-            box.Width = 175;
+            box.Width = 145;
             box.Height = 28;
             box.TextAlign = HorizontalAlignment.Right;
             box.BackColor = Color.FromArgb(26, 28, 44);
             box.ForeColor = Color.FromArgb(210, 214, 226);
             box.Font = new Font("Yu Gothic UI", 11f);
             box.BorderStyle = BorderStyle.FixedSingle;
+        }
+
+        Control NumberStepper(TextBox box, int min, int max)
+        {
+            var host = new Panel
+            {
+                Width = 175,
+                Height = 28,
+                BackColor = Color.Transparent
+            };
+            box.Location = new Point(0, 0);
+            host.Controls.Add(box);
+
+            var up = StepperButton("▲", 0);
+            var down = StepperButton("▼", 14);
+            up.Click += (s, e) => StepNumber(box, 1, min, max);
+            down.Click += (s, e) => StepNumber(box, -1, min, max);
+            tooltips.SetToolTip(up, T("値を増やす", "Increase value"));
+            tooltips.SetToolTip(down, T("値を減らす", "Decrease value"));
+            host.Controls.Add(up);
+            host.Controls.Add(down);
+            return host;
+        }
+
+        RoundButton StepperButton(string text, int top)
+        {
+            return new RoundButton
+            {
+                Text = text,
+                Location = new Point(145, top),
+                Width = 30,
+                Height = 14,
+                Font = new Font("Yu Gothic UI", 6.5f, FontStyle.Bold),
+                FillColor = Color.FromArgb(32, 36, 52),
+                HoverBackColor = Color.FromArgb(44, 52, 76),
+                PressedBackColor = Color.FromArgb(24, 28, 40),
+                BorderColorNormal = Color.FromArgb(48, 58, 80),
+                ForeColor = Color.FromArgb(170, 188, 220),
+                CornerRadius = 0,
+                TabStop = false
+            };
+        }
+
+        static void StepNumber(TextBox box, int delta, int min, int max)
+        {
+            int value;
+            if (!int.TryParse(box.Text.Trim(), out value)) value = min;
+            value = Math.Max(min, Math.Min(max, value + delta));
+            box.Text = value.ToString();
+            box.SelectionStart = box.Text.Length;
         }
 
         static int ReadBoxInt(TextBox box, int fallback, int min, int max)
